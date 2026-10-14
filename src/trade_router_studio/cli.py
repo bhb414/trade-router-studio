@@ -202,6 +202,33 @@ def stop() -> None:
 def stop_all() -> None:
     """Stop Studio and the central Router for the packaged desktop app."""
     stop()
+    _request_router_shutdown()
+
+
+def request_all_shutdowns() -> None:
+    """Submit shutdown requests without waiting, for a closing console handler."""
+    try:
+        httpx.post(
+            studio_base_url() + "/api/shutdown",
+            headers={"authorization": f"Bearer {_studio_token()}"},
+            timeout=1,
+        )
+    except httpx.RequestError:
+        pass
+    try:
+        router_token = DpapiSecretStore(
+            RouterPaths.discover().secrets
+        ).installation_token()
+        httpx.post(
+            daemon_base_url() + "/v1/system/shutdown",
+            headers={"authorization": f"Bearer {router_token}"},
+            timeout=1,
+        )
+    except httpx.RequestError:
+        pass
+
+
+def _request_router_shutdown() -> None:
     if not _router_alive():
         return
     try:

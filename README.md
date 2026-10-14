@@ -46,8 +46,10 @@ trade-studio stop
 ```
 
 The VBS and CMD launchers are development helpers. End users should run the packaged
-`TradeRouterStudio.exe`; the dashboard's **종료** button stops Studio and the central
-Router in order without opening a console window.
+`TradeRouterStudio.exe`. It keeps one console window open; closing that window or
+pressing Ctrl+C stops Studio and the central Router. Router, Studio, and strategy child
+processes do not open additional consoles. The dashboard's **종료** button performs the
+same ordered shutdown.
 
 ## Windows distribution and updates
 

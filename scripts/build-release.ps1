@@ -24,7 +24,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Studio 빌드 의존성 설치에 실패했습니다." }
 
   Remove-Item -Recurse -Force ".release-build", ".release-dist", "release" -ErrorAction SilentlyContinue
-  & $Python -m PyInstaller --noconfirm --clean --windowed --onedir `
+  & $Python -m PyInstaller --noconfirm --clean --console --onedir `
     --name TradeRouterStudio `
     --distpath ".release-dist" --workpath ".release-build\main" `
     --specpath ".release-build" `
