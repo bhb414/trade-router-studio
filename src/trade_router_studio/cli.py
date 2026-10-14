@@ -20,6 +20,13 @@ app = typer.Typer(help="Web strategy studio powered by Trade Router")
 console = Console()
 
 
+def _background_python() -> str:
+    if os.name != "nt":
+        return sys.executable
+    pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    return pythonw if os.path.exists(pythonw) else sys.executable
+
+
 def _studio_token() -> str:
     paths = StudioPaths.discover()
     paths.ensure()
@@ -114,7 +121,7 @@ def start(
     )
     with paths.server_log.open("a", encoding="utf-8") as log:
         process = subprocess.Popen(
-            [sys.executable, "-m", "trade_router_studio.server"],
+            [_background_python(), "-m", "trade_router_studio.server"],
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
