@@ -251,6 +251,7 @@ async def test_profile_validation_returns_clear_message_and_shared_registration(
         assert "증권사 API 연결 추가" in page.text
         assert "증권사를 선택하면 필요한 인증 항목이 자동으로 표시됩니다." in page.text
         assert "연결 프로필" not in page.text
+        assert "키 사용 범위" not in page.text
 
         missing_key = await client.post(
             "/api/profiles",
@@ -264,7 +265,6 @@ async def test_profile_validation_returns_clear_message_and_shared_registration(
             json={
                 "id": "nh-main",
                 "provider": "namuh",
-                "usage": "shared",
                 "app_key": "shared-key",
                 "app_secret": "shared-secret",
             },
@@ -273,3 +273,15 @@ async def test_profile_validation_returns_clear_message_and_shared_registration(
         assert shared.json()["id"] == "nh-main"
         assert shared.json()["usage"] == "shared"
         assert [item["usage"] for item in router.registered_profiles] == ["shared"]
+
+        kis = await client.post(
+            "/api/profiles",
+            json={
+                "id": "kis-main",
+                "provider": "kis",
+                "app_key": "kis-key",
+                "app_secret": "kis-secret",
+            },
+        )
+        assert kis.status_code == 200
+        assert kis.json()["usage"] == "auto"

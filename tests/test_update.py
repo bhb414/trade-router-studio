@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 import httpx
@@ -96,3 +97,41 @@ async def test_checksum_mismatch_is_rejected(tmp_path):
             await service.download()
 
     assert not list(tmp_path.glob("updates/*.zip"))
+
+
+def test_installer_waits_for_console_studio_and_router(tmp_path, monkeypatch):
+    active_paths = paths(tmp_path / "studio-home")
+    service = UpdateService(active_paths)
+    install_dir = tmp_path / "install"
+    install_dir.mkdir()
+    executable = install_dir / "TradeRouterStudio.exe"
+    executable.write_bytes(b"studio")
+    (install_dir / "TradeRouterUpdater.exe").write_bytes(b"updater")
+
+    archive = service._download_path("0.1.6")
+    archive.write_bytes(b"archive")
+    archive.with_suffix(".sha256").write_text(
+        hashlib.sha256(b"archive").hexdigest(), encoding="ascii"
+    )
+    router_home = active_paths.home.parent / "TradeRouter"
+    router_home.mkdir(parents=True)
+    (router_home / "daemon.pid").write_text("222", encoding="ascii")
+
+    launched = []
+    monkeypatch.setattr("trade_router_studio.update.sys.frozen", True, raising=False)
+    monkeypatch.setattr("trade_router_studio.update.sys.executable", str(executable))
+    monkeypatch.setenv("TRADE_STUDIO_HOST_PID", "111")
+    monkeypatch.setattr(
+        "trade_router_studio.update.subprocess.Popen",
+        lambda *args, **kwargs: launched.append((args, kwargs)),
+    )
+
+    service.launch_installer("0.1.6")
+
+    arguments = launched[0][0][0]
+    waited = {
+        int(arguments[index + 1])
+        for index, value in enumerate(arguments)
+        if value == "--wait-pid"
+    }
+    assert waited == {os.getpid(), 111, 222}

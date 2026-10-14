@@ -85,13 +85,11 @@ function render() {
 
   const providerNames = { kis: "한국투자증권 KIS", namuh: "NH투자증권 NAMUH", simulated: "시뮬레이션" };
   const environmentNames = { live: "실전 계좌", paper: "모의 계좌" };
-  const usageNames = { live: "실전용", paper: "모의용", shared: "실전·모의 공용" };
   $("#profiles").innerHTML = table(
-    ["연결 이름", "증권사", "키 사용 범위", "인증", "작업"],
+    ["연결 이름", "증권사", "인증", "작업"],
     snapshot.profiles.map((item) =>
       "<tr><td><strong>" + esc(item.id) + "</strong></td>" +
-      "<td>" + esc(providerNames[item.provider] || item.provider) + "</td><td>" +
-      esc(usageNames[item.usage] || item.usage) + "</td>" +
+      "<td>" + esc(providerNames[item.provider] || item.provider) + "</td>" +
       '<td><span class="badge ' + (item.secret_configured ? "ready" : "") + '">' +
       (item.secret_configured ? "설정됨" : "불필요/미설정") + "</span></td>" +
       '<td><div class="row-actions"><button class="secondary" data-check-profile="' +
@@ -348,34 +346,9 @@ async function refreshLogs() {
 function updateCredentialFields() {
   const provider = $("#profile-provider").value;
   const simulated = provider === "simulated";
-  const usageSelect = $("#profile-usage");
-  const capability = (state.snapshot.capabilities || []).find(
-    (item) => item.provider === provider,
-  );
-  let usages = capability ? capability.environments : [];
-  if (simulated) usages = ["paper"];
-  const order = ["paper", "live"];
-  usages = order.filter((item) => usages.includes(item));
-  if (!usages.length) usages = provider === "namuh" ? ["live"] : ["paper", "live"];
-  if (capability && capability.credential_scope === "provider" &&
-      usages.includes("paper") && usages.includes("live")) {
-    usages.push("shared");
-  }
-  const current = usageSelect.value;
-  const providerChanged = usageSelect.dataset.provider !== provider;
-  usageSelect.dataset.provider = provider;
-  usageSelect.innerHTML = usages.map(
-    (item) => '<option value="' + item + '">' +
-      (item === "shared" ? "실전·모의 공용" : (item === "live" ? "실전용" : "모의용")) + "</option>",
-  ).join("");
-  const preferred = provider === "namuh" && usages.includes("shared") ? "shared" : usages[0];
-  usageSelect.value = !providerChanged && usages.includes(current) ? current : preferred;
   $("#credential-fields").classList.toggle("hidden", simulated);
-  $("#usage-field").classList.toggle("hidden", simulated);
   $("#profile-key").required = !simulated;
   $("#profile-secret").required = !simulated;
-  usageSelect.disabled = simulated;
-  if (simulated) usageSelect.value = "paper";
   if (provider === "namuh") {
     $("#credential-title").textContent = "NH PLUG API 인증정보";
     $("#credential-help").textContent = "NH PLUG 포털에서 발급받은 App Key와 App Secret을 입력하세요.";
@@ -383,7 +356,6 @@ function updateCredentialFields() {
     $("#profile-secret-label").textContent = "NH PLUG App Secret";
     $("#profile-key").placeholder = "NH PLUG App Key";
     $("#profile-secret").placeholder = "NH PLUG App Secret";
-    $("#usage-help").textContent = "한 키를 실전과 모의에 함께 쓰면 공용을 선택하세요. API 주소는 계좌 구분에 맞춰 자동 선택됩니다.";
   } else if (provider === "kis") {
     $("#credential-title").textContent = "KIS Developers API 인증정보";
     $("#credential-help").textContent = "KIS Developers에서 발급받은 App Key와 App Secret을 입력하세요.";
@@ -391,9 +363,6 @@ function updateCredentialFields() {
     $("#profile-secret-label").textContent = "KIS App Secret";
     $("#profile-key").placeholder = "KIS App Key";
     $("#profile-secret").placeholder = "KIS App Secret";
-    $("#usage-help").textContent = "실전용 키와 모의용 키가 다르면 증권사 연결을 각각 추가하세요. API 주소는 자동 선택됩니다.";
-  } else {
-    $("#usage-help").textContent = "";
   }
 }
 
@@ -410,7 +379,6 @@ async function registerProfile(event) {
   const body = {
     id: $("#profile-id").value.trim(),
     provider,
-    usage: provider === "simulated" ? "paper" : $("#profile-usage").value,
     display_name: $("#profile-name").value.trim() || null,
     app_key: provider === "simulated" ? null : $("#profile-key").value.trim(),
     app_secret: provider === "simulated" ? null : $("#profile-secret").value,
@@ -446,7 +414,9 @@ function showAccountDialog() {
 function updateEnvironmentSelect(profileSelector, environmentSelector) {
   const profile = state.snapshot.profiles.find((item) => item.id === $(profileSelector).value);
   if (!profile) return;
-  const environments = profile.usage === "shared" ? ["paper", "live"] : [profile.usage];
+  const environments = ["auto", "shared"].includes(profile.usage)
+    ? ["paper", "live"]
+    : [profile.usage];
   const select = $(environmentSelector);
   const current = select.value;
   select.innerHTML = environments.map(
@@ -465,7 +435,9 @@ function updateStrategyMarketConnection() {
   const profile = state.snapshot.profiles.find((item) => item.id === $("#strategy-market").value);
   const account = state.snapshot.accounts.find((item) => item.alias === $("#strategy-account").value);
   if (!profile || !account) return;
-  const environment = profile.usage === "shared" ? account.environment : profile.usage;
+  const environment = ["auto", "shared"].includes(profile.usage)
+    ? account.environment
+    : profile.usage;
   $("#strategy-market-environment").value = environment;
   const kind = environment === "live" ? "실전" : "모의";
   $("#strategy-market-help").textContent = kind + " 시세 API를 자동 사용합니다. 서버 주소를 따로 설정할 필요가 없습니다.";

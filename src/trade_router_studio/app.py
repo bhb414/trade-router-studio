@@ -336,6 +336,11 @@ def create_app(
     @app.post("/api/profiles", dependencies=secured)
     async def register_profile(body: ProfileRegistration):
         payload = body.model_dump(mode="json")
+        payload["usage"] = {
+            "kis": "auto",
+            "namuh": "shared",
+            "simulated": "paper",
+        }[body.provider]
         return await active_router.register_profile(payload)
 
     @app.post("/api/profiles/{profile_id}/check", dependencies=secured)

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
-from trade_router import CredentialUsage, ProviderEnvironment, RiskLimits
+from trade_router import ProviderEnvironment, RiskLimits
 
 
 class ScriptRecord(BaseModel):
@@ -46,7 +46,6 @@ class ProfileRegistration(BaseModel):
         min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
     )
     provider: Literal["kis", "namuh", "simulated"]
-    usage: CredentialUsage = CredentialUsage.PAPER
     display_name: str | None = Field(default=None, max_length=128)
     app_key: str | None = None
     app_secret: str | None = None
@@ -55,8 +54,6 @@ class ProfileRegistration(BaseModel):
     @model_validator(mode="after")
     def validate_provider_fields(self) -> ProfileRegistration:
         if self.provider == "simulated":
-            if self.usage != CredentialUsage.PAPER:
-                raise ValueError("시뮬레이션 인증정보 용도는 모의용입니다.")
             return self
         if not (self.app_key or "").strip():
             raise ValueError("App Key를 입력하세요.")

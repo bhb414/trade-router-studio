@@ -90,8 +90,8 @@ version, and pushes the matching tag. The tag starts the Windows release workflo
 The dashboard can complete the initial setup without using the Router CLI:
 
 1. Use **API 연결 추가** to select KIS, NAMUH, or simulation. The form shows the
-   credential fields required by that broker. Mark the key as live-only, paper-only,
-   or shared; account type then selects the correct broker API address automatically.
+   credential fields required by that broker. The linked account type selects the
+   correct broker API address automatically.
 2. Use **계좌 등록** to bind an account alias and set central risk limits.
 3. Open **스크립트**, register a strategy, and save its Python source.
 4. Enable the account and strategy separately before starting an order-capable script.

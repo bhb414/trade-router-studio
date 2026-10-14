@@ -186,6 +186,10 @@ class UpdateService:
         updater_copy = self.update_dir / "TradeRouterUpdater.exe"
         shutil.copy2(bundled_updater, updater_copy)
         router_pid = self._read_pid(self.paths.home.parent / "TradeRouter" / "daemon.pid")
+        try:
+            host_pid = int(os.environ.get("TRADE_STUDIO_HOST_PID", "0"))
+        except ValueError:
+            host_pid = 0
         arguments = [
             str(updater_copy),
             "--archive",
@@ -194,11 +198,12 @@ class UpdateService:
             str(install_dir),
             "--launch",
             "TradeRouterStudio.exe",
-            "--wait-pid",
-            str(os.getpid()),
         ]
-        if router_pid:
-            arguments.extend(["--wait-pid", str(router_pid)])
+        wait_pids = dict.fromkeys(
+            pid for pid in (os.getpid(), host_pid, router_pid) if pid and pid > 0
+        )
+        for pid in wait_pids:
+            arguments.extend(["--wait-pid", str(pid)])
         flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS if os.name == "nt" else 0
         subprocess.Popen(
             arguments,
