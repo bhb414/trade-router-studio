@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -36,6 +38,7 @@ class UpdateService:
         *,
         repository: str | None = None,
         client: httpx.AsyncClient | None = None,
+        project_root: Path | None = None,
     ) -> None:
         self.paths = paths
         self.repository = (
@@ -45,12 +48,24 @@ class UpdateService:
         )
         self._client = client
         self._latest: dict[str, Any] | None = None
+        self._project_root = project_root or Path(__file__).resolve().parents[2]
 
     @property
     def update_dir(self) -> Path:
         path = self.paths.home / "updates"
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @property
+    def source_checkout(self) -> Path | None:
+        root = self._project_root
+        if (root / ".git").exists() and (root / "pyproject.toml").is_file():
+            return root
+        return None
+
+    @property
+    def source_mode(self) -> bool:
+        return not bool(getattr(sys, "frozen", False)) and self.source_checkout is not None
 
     async def check(self, *, refresh: bool = True) -> dict[str, Any]:
         release = await self._release(refresh=refresh)
@@ -64,15 +79,23 @@ class UpdateService:
                 status_code=502,
             ) from exc
         assets = {item.get("name"): item for item in release.get("assets", [])}
-        package_ready = RELEASE_ASSET in assets and f"{RELEASE_ASSET}.sha256" in assets
-        downloaded = self._download_path(latest).is_file()
+        packaged_assets_ready = (
+            RELEASE_ASSET in assets and f"{RELEASE_ASSET}.sha256" in assets
+        )
+        package_ready = self.source_mode or packaged_assets_ready
+        downloaded = (
+            self._source_ready_path(latest).is_file()
+            if self.source_mode
+            else self._download_path(latest).is_file()
+        )
         return {
             "current_version": __version__,
             "latest_version": latest,
             "available": available,
             "package_ready": package_ready,
             "downloaded": downloaded,
-            "can_apply": bool(getattr(sys, "frozen", False)),
+            "can_apply": self.source_mode or bool(getattr(sys, "frozen", False)),
+            "update_mode": "source" if self.source_mode else "package",
             "release_url": release.get("html_url"),
             "published_at": release.get("published_at"),
         }
@@ -80,6 +103,8 @@ class UpdateService:
     async def download(self) -> dict[str, Any]:
         release = await self._release(refresh=True)
         version = self._tag_version(release.get("tag_name", ""))
+        if self.source_mode:
+            return await asyncio.to_thread(self._prepare_source_update, version)
         assets = {item.get("name"): item for item in release.get("assets", [])}
         package = assets.get(RELEASE_ASSET)
         checksum = assets.get(f"{RELEASE_ASSET}.sha256")
@@ -153,6 +178,8 @@ class UpdateService:
         }
 
     def launch_installer(self, version: str) -> dict[str, Any]:
+        if self.source_mode:
+            return self._launch_source_updater(version)
         if not getattr(sys, "frozen", False):
             raise StudioError(
                 "UPDATE_PACKAGED_APP_REQUIRED",
@@ -221,6 +248,128 @@ class UpdateService:
             close_fds=True,
         )
         return {"restarting": True, "version": version}
+
+    def _prepare_source_update(self, version: str) -> dict[str, Any]:
+        root = self.source_checkout
+        if root is None:
+            raise StudioError(
+                "UPDATE_SOURCE_CHECKOUT_REQUIRED",
+                "Git으로 받은 Python 프로젝트에서만 소스 업데이트를 적용할 수 있습니다.",
+                status_code=409,
+            )
+        status = self._run_git(root, "status", "--porcelain", "--untracked-files=no")
+        if status.stdout.strip():
+            raise StudioError(
+                "UPDATE_SOURCE_DIRTY",
+                "프로그램 소스에 저장하지 않은 수정이 있어 업데이트를 중단했습니다.",
+                status_code=409,
+            )
+        tag = f"v{version}"
+        self._run_git(
+            root,
+            "fetch",
+            "--force",
+            "origin",
+            f"refs/tags/{tag}:refs/tags/{tag}",
+        )
+        ancestry = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "HEAD", tag],
+            cwd=str(root),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if ancestry.returncode != 0:
+            raise StudioError(
+                "UPDATE_SOURCE_DIVERGED",
+                "현재 프로그램 코드와 GitHub 최신 버전의 이력이 달라 자동 업데이트할 수 없습니다.",
+                status_code=409,
+            )
+        marker = self._source_ready_path(version)
+        marker.write_text(
+            json.dumps({"version": version, "tag": tag, "root": str(root)}),
+            encoding="utf-8",
+        )
+        return {
+            "version": version,
+            "source_ready": True,
+            "project_root": str(root),
+        }
+
+    def _launch_source_updater(self, version: str) -> dict[str, Any]:
+        root = self.source_checkout
+        marker = self._source_ready_path(version)
+        if root is None or not marker.is_file():
+            raise StudioError(
+                "UPDATE_NOT_DOWNLOADED",
+                "먼저 GitHub 최신 버전을 준비하세요.",
+                status_code=409,
+            )
+        try:
+            marker_data = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise StudioError(
+                "UPDATE_SOURCE_MARKER_INVALID",
+                "준비된 소스 업데이트 정보를 읽을 수 없습니다.",
+                status_code=409,
+            ) from exc
+        if marker_data.get("version") != version or Path(
+            marker_data.get("root", "")
+        ).resolve() != root.resolve():
+            raise StudioError(
+                "UPDATE_SOURCE_MARKER_INVALID",
+                "준비된 소스 업데이트 정보가 현재 프로젝트와 일치하지 않습니다.",
+                status_code=409,
+            )
+        python = Path(sys.executable).resolve()
+        pythonw = python.with_name("pythonw.exe") if os.name == "nt" else python
+        if not pythonw.is_file():
+            pythonw = python
+        router_pid = self._read_pid(self.paths.home.parent / "TradeRouter" / "daemon.pid")
+        try:
+            host_pid = int(os.environ.get("TRADE_STUDIO_HOST_PID", "0"))
+        except ValueError:
+            host_pid = 0
+        arguments = [
+            str(pythonw),
+            "-m",
+            "trade_router_studio.source_updater",
+            "--project-root",
+            str(root),
+            "--version",
+            version,
+            "--marker",
+            str(marker),
+            "--log",
+            str(self.update_dir / "source-update.log"),
+            "--python",
+            str(python),
+        ]
+        wait_pids = dict.fromkeys(
+            pid for pid in (os.getpid(), host_pid, router_pid) if pid and pid > 0
+        )
+        for pid in wait_pids:
+            arguments.extend(["--wait-pid", str(pid)])
+        flags = (
+            subprocess.CREATE_NO_WINDOW
+            | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_BREAKAWAY_FROM_JOB
+            if os.name == "nt"
+            else 0
+        )
+        subprocess.Popen(
+            arguments,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(root),
+            creationflags=flags,
+            close_fds=True,
+        )
+        return {"restarting": True, "version": version, "update_mode": "source"}
 
     async def _release(self, *, refresh: bool) -> dict[str, Any]:
         if self._latest is not None and not refresh:
@@ -296,6 +445,32 @@ class UpdateService:
     def _download_path(self, version: str) -> Path:
         safe_version = "".join(ch for ch in version if ch.isalnum() or ch in ".-_")
         return self.update_dir / f"TradeRouterStudio-{safe_version}.zip"
+
+    def _source_ready_path(self, version: str) -> Path:
+        safe_version = "".join(ch for ch in version if ch.isalnum() or ch in ".-_")
+        return self.update_dir / f"TradeRouterStudio-{safe_version}.source-ready"
+
+    @staticmethod
+    def _run_git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                ["git", *arguments],
+                cwd=str(root),
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = ""
+            if isinstance(exc, subprocess.CalledProcessError):
+                detail = (exc.stderr or exc.stdout or "").strip()
+            message = "GitHub에서 프로그램 소스를 준비하지 못했습니다."
+            if detail:
+                message += f" {detail}"
+            raise StudioError("UPDATE_SOURCE_FAILED", message, status_code=502) from exc
 
     @staticmethod
     def _tag_version(tag: str) -> str:

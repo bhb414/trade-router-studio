@@ -1,8 +1,10 @@
 # Trade Router Studio
 
-Trade Router Studio is a separate local web application built on top of
-[Trade Router](https://github.com/bhb414/trade-router). Trade Router remains the broker gateway daemon;
-Studio manages Python strategy source, process lifecycle, and logs.
+Trade Router Studio is a personal Python auto-trading workspace that runs entirely on
+your computer and opens its controls in a local web browser. It is built on top of
+[Trade Router](https://github.com/bhb414/trade-router): the Router handles broker
+connections internally, while Studio provides the Python editor, start/stop controls,
+and logs.
 
 ## Responsibilities
 
@@ -16,18 +18,19 @@ Strategy processes never receive broker App Keys or App Secrets. They receive a
 strategy-bound SDK client and every order still passes through Trade Router's central
 account/strategy arming, reconciliation, buying-power, and risk checks.
 
-## Development install
+## Local Python workspace
 
 ```powershell
 cd H:\Hyunbin\snacks\trade-router-studio
 py -3.13 -m venv .venv
-.\.venv\Scripts\python -m pip install "..\trade-router\dist\trade_router-0.1.0-py3-none-any.whl"
+.\.venv\Scripts\python -m pip install -e "..\trade-router"
 .\.venv\Scripts\python -m pip install -e ".[dev]"
-trade-studio start
+start-studio.cmd
 ```
 
-`trade-studio start` starts Trade Router when needed, starts Studio in the background,
-and opens a one-time authenticated browser URL. The default addresses are:
+`start-studio.cmd` starts Trade Router when needed, opens the local browser workspace,
+and keeps one console window open. Closing that window stops Studio and Router. The
+default addresses are:
 
 - Trade Router daemon: `http://127.0.0.1:8877`
 - Trade Router Studio: `http://127.0.0.1:8890`
@@ -45,11 +48,15 @@ trade-studio status
 trade-studio stop
 ```
 
-The VBS and CMD launchers are development helpers. End users should run the packaged
-`TradeRouterStudio.exe`. It keeps one console window open; closing that window or
-pressing Ctrl+C stops Studio and the central Router. Router, Studio, and strategy child
-processes do not open additional consoles. The dashboard's **종료** button performs the
-same ordered shutdown.
+Python scripts, encrypted broker credentials, account aliases, logs, and SQLite state
+are stored in the Windows user data directory, outside the Git checkout. Pulling a new
+program version never replaces these files.
+
+The web screen checks the latest GitHub release. In a Git checkout, **업데이트 시작**
+fetches the matching release tag, allows only a clean fast-forward update,
+refreshes the virtual-environment packages, and restarts the local workspace. Local
+source modifications are never overwritten. The executable ZIP updater remains
+available as an optional distribution method.
 
 ## Windows distribution and updates
 

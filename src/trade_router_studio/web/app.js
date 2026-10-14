@@ -191,11 +191,11 @@ async function handleUpdate() {
       return;
     }
     if (!state.update.downloaded) {
-      button.textContent = "업데이트 다운로드 중…";
+      button.textContent = "업데이트 준비 중…";
       const downloaded = await api("/api/app/update/download", { method: "POST" });
       state.update.downloaded = true;
       state.update.latest_version = downloaded.version;
-      toast("업데이트 다운로드와 SHA-256 검증을 마쳤습니다.");
+      toast("GitHub 최신 버전 준비를 마쳤습니다.");
       renderUpdateButton();
       return;
     }

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import httpx
@@ -33,10 +36,10 @@ async def test_github_release_is_downloaded_and_verified(tmp_path):
             return httpx.Response(
                 200,
                 json={
-                    "tag_name": "v0.2.1",
+                    "tag_name": "v0.2.2",
                     "draft": False,
                     "prerelease": False,
-                    "html_url": "https://github.com/bhb414/trade-router-studio/releases/tag/v0.2.1",
+                    "html_url": "https://github.com/bhb414/trade-router-studio/releases/tag/v0.2.2",
                     "published_at": "2026-10-14T12:00:00Z",
                     "assets": [
                         {
@@ -55,7 +58,9 @@ async def test_github_release_is_downloaded_and_verified(tmp_path):
         return httpx.Response(200, content=archive)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        service = UpdateService(paths(tmp_path), client=client)
+        service = UpdateService(
+            paths(tmp_path), client=client, project_root=tmp_path / "not-checkout"
+        )
         checked = await service.check()
         assert checked["available"] is True
         assert checked["package_ready"] is True
@@ -72,7 +77,7 @@ async def test_checksum_mismatch_is_rejected(tmp_path):
             return httpx.Response(
                 200,
                 json={
-                    "tag_name": "v0.2.1",
+                    "tag_name": "v0.2.2",
                     "draft": False,
                     "prerelease": False,
                     "assets": [
@@ -92,11 +97,75 @@ async def test_checksum_mismatch_is_rejected(tmp_path):
         return httpx.Response(200, content=b"changed")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        service = UpdateService(paths(tmp_path), client=client)
+        service = UpdateService(
+            paths(tmp_path), client=client, project_root=tmp_path / "not-checkout"
+        )
         with pytest.raises(StudioError, match="SHA-256"):
             await service.download()
 
     assert not list(tmp_path.glob("updates/*.zip"))
+
+
+async def test_source_checkout_prepares_git_update(tmp_path, monkeypatch):
+    root = tmp_path / "studio"
+    (root / ".git").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "tag_name": "v0.2.2",
+                "draft": False,
+                "prerelease": False,
+                "assets": [],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        service = UpdateService(paths(tmp_path / "home"), client=client, project_root=root)
+        monkeypatch.setattr(
+            service,
+            "_run_git",
+            lambda *_: subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        )
+        monkeypatch.setattr(
+            "trade_router_studio.update.subprocess.run",
+            lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "", ""),
+        )
+        checked = await service.check()
+        assert checked["update_mode"] == "source"
+        assert checked["package_ready"] is True
+        assert checked["can_apply"] is True
+        prepared = await service.download()
+
+    assert prepared["source_ready"] is True
+    assert service._source_ready_path("0.2.2").is_file()
+
+
+def test_source_checkout_launches_background_updater(tmp_path, monkeypatch):
+    root = tmp_path / "studio"
+    (root / ".git").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    service = UpdateService(paths(tmp_path / "home"), project_root=root)
+    marker = service._source_ready_path("0.2.2")
+    marker.write_text(
+        json.dumps({"version": "0.2.2", "tag": "v0.2.2", "root": str(root)}),
+        encoding="utf-8",
+    )
+    launched = []
+    monkeypatch.setattr(
+        "trade_router_studio.update.subprocess.Popen",
+        lambda *args, **kwargs: launched.append((args, kwargs)),
+    )
+
+    result = service.launch_installer("0.2.2")
+
+    assert result["update_mode"] == "source"
+    arguments = launched[0][0][0]
+    assert "trade_router_studio.source_updater" in arguments
+    assert "--project-root" in arguments
+    assert str(Path(sys.executable).resolve()) in arguments
 
 
 def test_installer_waits_for_console_studio_and_router(tmp_path, monkeypatch):
