@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import secrets
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Annotated
 
@@ -26,6 +26,7 @@ from .models import (
 )
 from .router_api import RouterAdminClient
 from .runner import ScriptSupervisor, validate_source
+from .update import UpdateService
 from .version import __version__
 
 _WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -84,12 +85,14 @@ def create_app(
     store: StudioStore | None = None,
     router: RouterAdminClient | None = None,
     studio_token: str | None = None,
+    updates: UpdateService | None = None,
 ) -> FastAPI:
     active_paths = paths or StudioPaths.discover()
     active_paths.ensure()
     active_store = store or StudioStore(active_paths.database)
     active_router = router or RouterAdminClient()
     supervisor = ScriptSupervisor(active_paths, active_store, active_router)
+    update_service = updates or UpdateService(active_paths)
     token = studio_token or DpapiSecretStore(active_paths.secrets).installation_token()
     ui_codes: dict[str, float] = {}
 
@@ -99,6 +102,7 @@ def create_app(
         app.state.store = active_store
         app.state.router = active_router
         app.state.supervisor = supervisor
+        app.state.updates = update_service
         await supervisor.restore()
         try:
             yield
@@ -190,6 +194,33 @@ def create_app(
                 item.state == "running" for item in statuses.values()
             ),
         }
+
+    @app.get("/api/app/update", dependencies=secured)
+    async def check_update(refresh: bool = Query(True)):
+        return await update_service.check(refresh=refresh)
+
+    @app.post("/api/app/update/download", dependencies=secured)
+    async def download_update():
+        return await update_service.download()
+
+    async def stop_everything(request: Request) -> None:
+        await asyncio.sleep(0.5)
+        with suppress(StudioError):
+            await active_router.shutdown()
+        server = getattr(request.app.state, "server", None)
+        if server is not None:
+            server.should_exit = True
+
+    @app.post("/api/app/update/apply", dependencies=secured)
+    async def apply_update(request: Request, version: str = Query(..., min_length=1)):
+        result = update_service.launch_installer(version)
+        asyncio.create_task(stop_everything(request))
+        return result
+
+    @app.post("/api/app/stop", dependencies=secured)
+    async def stop_app(request: Request):
+        asyncio.create_task(stop_everything(request))
+        return {"stopping": True}
 
     @app.get("/api/snapshot", dependencies=secured)
     async def snapshot():

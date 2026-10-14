@@ -57,6 +57,9 @@ class RouterAdminClient:
     async def health(self) -> dict[str, Any]:
         return await self.request("GET", "/v1/system/health", timeout=3)
 
+    async def shutdown(self) -> dict[str, Any] | None:
+        return await self.request("POST", "/v1/system/shutdown", timeout=10)
+
     async def profiles(self) -> list[dict[str, Any]]:
         return await self.request("GET", "/v1/profiles")
 

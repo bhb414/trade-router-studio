@@ -1,7 +1,7 @@
 # Trade Router Studio
 
 Trade Router Studio is a separate local web application built on top of
-[Trade Router](../trade-router). Trade Router remains the broker gateway daemon;
+[Trade Router](https://github.com/bhb414/trade-router). Trade Router remains the broker gateway daemon;
 Studio manages Python strategy source, process lifecycle, and logs.
 
 ## Responsibilities
@@ -45,9 +45,34 @@ trade-studio status
 trade-studio stop
 ```
 
-On Windows, double-click `start-studio.vbs` for a windowless one-click launch.
-Double-click `stop-studio.vbs` to stop Studio first and then the central Router.
-`start-studio.cmd` remains available when startup output is needed for troubleshooting.
+The VBS and CMD launchers are development helpers. End users should run the packaged
+`TradeRouterStudio.exe`; the dashboard's **종료** button stops Studio and the central
+Router in order without opening a console window.
+
+## Windows distribution and updates
+
+Build a release ZIP from the Studio checkout and the sibling Router checkout:
+
+```powershell
+.\scripts\build-release.ps1
+```
+
+The command creates the following files under `release`:
+
+- `TradeRouterStudio-windows-x64.zip`
+- `TradeRouterStudio-windows-x64.zip.sha256`
+
+GitHub Actions runs the same build for a `v*` tag and publishes both files to
+[Studio Releases](https://github.com/bhb414/trade-router-studio/releases). A recipient
+extracts the ZIP once and runs `TradeRouterStudio.exe`. The dashboard checks that
+release feed, downloads both assets, verifies SHA-256, stops the two local services,
+replaces the program directory, and starts the new version.
+
+Runtime data is outside the install directory under the current Windows user's local
+application data directory. Updating or replacing the program folder therefore keeps
+encrypted credentials, account aliases, strategy source, logs, and SQLite state. Never
+put App Keys, App Secrets, tokens, account data, `.db`, or `.dpapi` files in a GitHub
+release.
 
 ## Web setup
 

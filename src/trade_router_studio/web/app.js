@@ -3,6 +3,7 @@ const state = {
   health: null,
   selected: null,
   dirty: false,
+  update: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -65,6 +66,7 @@ function render() {
   const snapshot = state.snapshot;
   $("#status-dot").className = health.status;
   $("#status-text").textContent = health.status === "ready" ? "Studio 정상" : "Router 확인 필요";
+  $("#app-version").textContent = "v" + health.version;
   $("#router-state").textContent = health.router.status;
   $("#order-state").textContent = health.router.accepting_orders ? "주문 권한 열림" : "주문 권한 닫힘";
   $("#profile-count").textContent = snapshot.profiles.length;
@@ -118,6 +120,70 @@ function render() {
   );
   bindRowActions();
   renderList();
+}
+
+function renderUpdateButton() {
+  const button = $("#update-app");
+  const update = state.update;
+  if (!update || !update.available) {
+    button.textContent = "업데이트 확인";
+  } else if (!update.downloaded) {
+    button.textContent = "v" + update.latest_version + " 업데이트 시작";
+  } else {
+    button.textContent = "업데이트 적용 후 재시작";
+  }
+}
+
+async function handleUpdate() {
+  const button = $("#update-app");
+  button.disabled = true;
+  try {
+    if (!state.update || !state.update.available) {
+      state.update = await api("/api/app/update?refresh=true");
+      if (!state.update.available) {
+        toast("현재 최신 버전입니다. · v" + state.update.current_version);
+      } else if (!state.update.package_ready) {
+        throw new Error("최신 GitHub 배포에 Windows 업데이트 파일이 없습니다.");
+      } else {
+        toast("새 버전 v" + state.update.latest_version + "을 사용할 수 있습니다.");
+      }
+      renderUpdateButton();
+      return;
+    }
+    if (!state.update.downloaded) {
+      button.textContent = "업데이트 다운로드 중…";
+      const downloaded = await api("/api/app/update/download", { method: "POST" });
+      state.update.downloaded = true;
+      state.update.latest_version = downloaded.version;
+      toast("업데이트 다운로드와 SHA-256 검증을 마쳤습니다.");
+      renderUpdateButton();
+      return;
+    }
+    if (!confirm("실행 중인 전략과 Trade Router를 정리한 뒤 업데이트하고 다시 시작할까요?")) return;
+    button.textContent = "재시작 준비 중…";
+    await api(
+      "/api/app/update/apply?version=" + encodeURIComponent(state.update.latest_version),
+      { method: "POST" },
+    );
+    toast("업데이트를 적용하고 다시 시작합니다.");
+  } catch (error) {
+    toast(error.message, true);
+    renderUpdateButton();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function exitApp() {
+  if (!confirm("실행 중인 전략과 중앙 Router를 정리하고 프로그램을 종료할까요?")) return;
+  try {
+    await api("/api/app/stop", { method: "POST" });
+    toast("프로그램을 종료하고 있습니다.");
+    $("#exit-app").disabled = true;
+    $("#update-app").disabled = true;
+  } catch (error) {
+    toast(error.message, true);
+  }
 }
 
 function bindRowActions() {
@@ -409,6 +475,8 @@ $$("[data-close-dialog]").forEach((item) => {
   item.onclick = () => item.closest("dialog").close();
 });
 $("#refresh").onclick = refresh;
+$("#update-app").onclick = handleUpdate;
+$("#exit-app").onclick = exitApp;
 $("#new-profile").onclick = showProfileDialog;
 $("#new-account").onclick = showAccountDialog;
 $("#new-strategy").onclick = showStrategyDialog;

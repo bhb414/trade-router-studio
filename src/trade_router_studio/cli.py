@@ -27,6 +27,10 @@ def _background_python() -> str:
     return pythonw if os.path.exists(pythonw) else sys.executable
 
 
+def _packaged() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
 def _studio_token() -> str:
     paths = StudioPaths.discover()
     paths.ensure()
@@ -78,13 +82,35 @@ def _ensure_router() -> None:
     if _router_alive():
         return
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    result = subprocess.run(
-        [sys.executable, "-m", "trade_router.cli", "daemon", "start"],
-        check=False,
-        creationflags=flags,
-    )
-    if result.returncode != 0 or not _router_alive():
-        raise typer.BadParameter("Trade Router 데몬을 시작하지 못했습니다.")
+    if _packaged():
+        paths = RouterPaths.discover()
+        paths.ensure()
+        with paths.daemon_log.open("a", encoding="utf-8") as log:
+            process = subprocess.Popen(
+                [sys.executable, "--router-server"],
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=log,
+                creationflags=flags | (subprocess.DETACHED_PROCESS if os.name == "nt" else 0),
+                cwd=str(paths.home),
+                close_fds=True,
+            )
+        paths.pid.write_text(str(process.pid), encoding="ascii")
+        for _ in range(40):
+            if _router_alive():
+                return
+            if process.poll() is not None:
+                break
+            time.sleep(0.25)
+    else:
+        result = subprocess.run(
+            [sys.executable, "-m", "trade_router.cli", "daemon", "start"],
+            check=False,
+            creationflags=flags,
+        )
+        if result.returncode == 0 and _router_alive():
+            return
+    raise typer.BadParameter("Trade Router 데몬을 시작하지 못했습니다.")
 
 
 def _open_browser() -> None:
@@ -120,8 +146,13 @@ def start(
         else 0
     )
     with paths.server_log.open("a", encoding="utf-8") as log:
+        command = (
+            [sys.executable, "--studio-server"]
+            if _packaged()
+            else [_background_python(), "-m", "trade_router_studio.server"]
+        )
         process = subprocess.Popen(
-            [_background_python(), "-m", "trade_router_studio.server"],
+            command,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
@@ -166,6 +197,22 @@ def stop() -> None:
             return
         time.sleep(0.25)
     console.print("종료 작업을 정리하고 있습니다.")
+
+
+def stop_all() -> None:
+    """Stop Studio and the central Router for the packaged desktop app."""
+    stop()
+    if not _router_alive():
+        return
+    try:
+        token = DpapiSecretStore(RouterPaths.discover().secrets).installation_token()
+        httpx.post(
+            daemon_base_url() + "/v1/system/shutdown",
+            headers={"authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+    except httpx.RequestError:
+        return
 
 
 @app.command("status")

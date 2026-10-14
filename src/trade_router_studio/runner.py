@@ -223,11 +223,18 @@ class ScriptSupervisor:
             status.state = "starting"
             status.message = None
             try:
+                command = (
+                    [sys.executable, "--strategy-worker", str(source_path)]
+                    if getattr(sys, "frozen", False)
+                    else [
+                        sys.executable,
+                        "-m",
+                        "trade_router_studio.worker",
+                        str(source_path),
+                    ]
+                )
                 process = await asyncio.create_subprocess_exec(
-                    sys.executable,
-                    "-m",
-                    "trade_router_studio.worker",
-                    str(source_path),
+                    *command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     stdin=asyncio.subprocess.DEVNULL,
