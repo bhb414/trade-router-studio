@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Trade Router Studio</title><link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header><div class="brand"><span>TS</span><div><strong>Trade Router Studio</strong><small>Trade Router 기반 전략 프로그램</small></div></div><nav><button class="nav active" data-view="dashboard">대시보드</button><button class="nav" data-view="editor">스크립트</button></nav><div class="status"><i id="status-dot"></i><span id="status-text">확인 중</span></div></header>
+  <main>
+    <div id="auth-warning" class="warning hidden"><code>trade-studio open</code> 명령으로 인증된 화면을 다시 여세요.</div>
+    <section id="dashboard" class="view active">
+      <div class="title"><div><h1>운영 현황</h1><p>Studio는 전략을 실행하고, 모든 증권사 요청과 주문 검증은 Trade Router가 처리합니다.</p></div><button id="refresh" class="secondary">새로고침</button></div>
+      <div class="metrics"><article><label>Trade Router</label><strong id="router-state">—</strong><small id="order-state">주문 권한 —</small></article><article><label>연결 프로필</label><strong id="profile-count">0</strong><small>KIS · NAMUH · 시뮬레이션</small></article><article><label>계좌</label><strong id="account-count">0</strong><small id="account-armed">허용 0</small></article><article><label>실행 전략</label><strong id="running-count">0</strong><small id="strategy-count">등록 0</small></article></div>
+      <div class="split"><article class="panel"><div class="panel-title"><h2>연결 프로필</h2></div><div id="profiles"></div></article><article class="panel"><div class="panel-title"><h2>계좌</h2></div><div id="accounts"></div></article></div>
+      <article class="panel"><div class="panel-title"><h2>전략</h2><button class="link" data-go="editor">스크립트 작성 →</button></div><div id="strategies"></div></article>
+    </section>
+    <section id="editor" class="view">
+      <div class="title"><div><h1>Python 전략</h1><p>코드는 별도 프로세스에서 실행되고 SDK를 통해 Trade Router에 연결됩니다.</p></div></div>
+      <div class="workspace">
+        <aside><div class="aside-title"><strong>전략</strong><button id="new-strategy" title="전략 등록">＋</button></div><div id="strategy-list"></div></aside>
+        <div class="editor-pane"><div id="empty" class="empty"><strong>전략을 선택하세요</strong><span>등록된 전략을 고르거나 새 전략을 등록할 수 있습니다.</span></div><div id="editor-body" class="hidden">
+          <div class="toolbar"><div class="identity"><strong id="selected-name">—</strong><span id="process" class="badge">stopped</span><small id="binding">—</small></div><div class="buttons"><button id="template" class="secondary">예제</button><button id="validate" class="secondary">검증</button><button id="save">저장</button><button id="run" class="success">실행</button><button id="stop" class="danger">중지</button></div></div>
+          <div class="contract"><code>async def main(router)</code> · Ctrl+S 저장 · 계좌 및 전략 승인과 위험 한도는 Router에서 적용됩니다.</div>
+          <textarea id="source" spellcheck="false" aria-label="Python 전략 코드"></textarea>
+          <div class="tabs"><button class="active" data-tab="logs">실행 로그</button><button data-tab="sdk">SDK 사용법</button><span id="dirty">저장됨</span></div>
+          <pre id="logs"></pre><div id="sdk" class="sdk hidden"><code>await router.market.quote(code="005930", venue="INTEGRATED")</code><code>await router.market.bars(code="005930", interval="3m", count=55)</code><code>await router.accounts.positions()</code><code>await router.orders.market_buy(code="005930", quantity=1, client_order_id="항상-고유한-값")</code><p>스크립트는 현재 Windows 사용자 권한으로 실행됩니다. 직접 작성하거나 신뢰하는 코드만 실행하세요.</p></div>
+        </div></div>
+      </div>
+    </section>
+  </main>
+  <dialog id="register"><form id="register-form" method="dialog"><div class="dialog-title"><div><h2>전략 등록</h2><p>거래 계좌와 시세 프로필은 중앙 Router에 고정 등록됩니다.</p></div><button value="cancel" class="close">×</button></div><label>전략 ID<input id="strategy-id" required maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" placeholder="bollinger-breakout"></label><label>거래 계좌<select id="strategy-account" required></select></label><label>시세 프로필<select id="strategy-market" required></select></label><div class="dialog-buttons"><button value="cancel" class="secondary">취소</button><button id="register-button" value="default">등록</button></div></form></dialog>
+  <div id="toast"></div><script src="/assets/app.js" defer></script>
+</body></html>

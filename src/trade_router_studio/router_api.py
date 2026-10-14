@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+from trade_router.core.config import RouterPaths, daemon_base_url
+from trade_router.core.secrets import DpapiSecretStore
+
+from .errors import StudioError
+
+
+class RouterAdminClient:
+    def __init__(self, *, base_url: str | None = None) -> None:
+        self.base_url = (base_url or daemon_base_url()).rstrip("/")
+        self._token: str | None = None
+
+    @property
+    def token(self) -> str:
+        if self._token is None:
+            self._token = DpapiSecretStore(
+                RouterPaths.discover().secrets
+            ).installation_token()
+        return self._token
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: Any = None,
+        timeout: float = 15,
+    ) -> Any:
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.base_url,
+                headers={"authorization": f"Bearer {self.token}"},
+                timeout=timeout,
+            ) as client:
+                response = await client.request(method, path, json=json_body)
+        except httpx.RequestError as exc:
+            raise StudioError(
+                "ROUTER_UNAVAILABLE",
+                "Trade Router 데몬에 연결할 수 없습니다.",
+                status_code=503,
+            ) from exc
+        if response.status_code >= 400:
+            try:
+                body = response.json()
+                code = body.get("code", "ROUTER_ERROR")
+                message = body.get("message", "Trade Router request failed.")
+            except Exception:
+                code = "ROUTER_HTTP_ERROR"
+                message = f"Trade Router returned HTTP {response.status_code}."
+            raise StudioError(code, message, status_code=response.status_code)
+        return None if response.status_code == 204 else response.json()
+
+    async def health(self) -> dict[str, Any]:
+        return await self.request("GET", "/v1/system/health", timeout=3)
+
+    async def profiles(self) -> list[dict[str, Any]]:
+        return await self.request("GET", "/v1/profiles")
+
+    async def accounts(self) -> list[dict[str, Any]]:
+        return await self.request("GET", "/v1/accounts")
+
+    async def strategies(self) -> list[dict[str, Any]]:
+        return await self.request("GET", "/v1/strategies")
+
+    async def strategy(self, strategy_id: str) -> dict[str, Any]:
+        return await self.request("GET", f"/v1/strategies/{strategy_id}")
+
+    async def register_strategy(
+        self, strategy_id: str, trading_account: str, market_data: str
+    ) -> dict[str, Any]:
+        return await self.request(
+            "POST",
+            "/v1/strategies",
+            json_body={
+                "config": {
+                    "id": strategy_id,
+                    "trading_account": trading_account,
+                    "market_data": market_data,
+                    "risk": {},
+                }
+            },
+        )
