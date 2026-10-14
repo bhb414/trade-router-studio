@@ -74,6 +74,15 @@ encrypted credentials, account aliases, strategy source, logs, and SQLite state.
 put App Keys, App Secrets, tokens, account data, `.db`, or `.dpapi` files in a GitHub
 release.
 
+After committing normal code changes, publish the next version with one command:
+
+```powershell
+.\scripts\publish-release.ps1 -Version 0.1.1
+```
+
+The script updates both package version files, runs Ruff and pytest, commits the
+version, and pushes the matching tag. The tag starts the Windows release workflow.
+
 ## Web setup
 
 The dashboard can complete the initial setup without using the Router CLI:
