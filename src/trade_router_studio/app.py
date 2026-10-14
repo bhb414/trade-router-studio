@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from trade_router.core.secrets import DpapiSecretStore
@@ -166,6 +167,35 @@ def create_app(
             content={"code": exc.code, "message": exc.message},
         )
 
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(
+        _: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        first = exc.errors()[0] if exc.errors() else {}
+        location = list(first.get("loc", ()))[1:]
+        field = str(location[-1]) if location else ""
+        labels = {
+            "id": "프로필 ID",
+            "provider": "증권사",
+            "environment": "접속 환경",
+            "app_key": "App Key",
+            "app_secret": "App Secret",
+            "alias": "계좌 별칭",
+            "account_number": "계좌번호",
+        }
+        if first.get("type") == "string_pattern_mismatch" and field == "id":
+            message = "프로필 ID는 영문 또는 숫자로 시작하고 영문·숫자·점·밑줄·하이픈만 사용할 수 있습니다."
+        elif first.get("type") == "value_error":
+            message = str(first.get("ctx", {}).get("error") or first.get("msg", ""))
+            message = message.removeprefix("Value error, ")
+        else:
+            label = labels.get(field, field or "입력값")
+            message = f"{label}을(를) 확인하세요."
+        return JSONResponse(
+            status_code=422,
+            content={"code": "INVALID_REQUEST", "message": message, "field": field},
+        )
+
     @app.exception_handler(KeyError)
     async def missing_record(_: Request, exc: KeyError):
         return JSONResponse(
@@ -271,15 +301,17 @@ def create_app(
 
     @app.get("/api/snapshot", dependencies=secured)
     async def snapshot():
-        profiles, accounts, strategies = await asyncio.gather(
+        profiles, accounts, strategies, capabilities = await asyncio.gather(
             active_router.profiles(),
             active_router.accounts(),
             active_router.strategies(),
+            active_router.capabilities(),
         )
         scripts = {item.strategy_id: item for item in await active_store.list_scripts()}
         statuses = await supervisor.statuses()
         return {
             "profiles": profiles,
+            "capabilities": capabilities,
             "accounts": accounts,
             "strategies": [
                 {
@@ -299,7 +331,57 @@ def create_app(
 
     @app.post("/api/profiles", dependencies=secured)
     async def register_profile(body: ProfileRegistration):
-        return await active_router.register_profile(body.model_dump(mode="json"))
+        payload = body.model_dump(mode="json")
+        if body.environment != "both":
+            return await active_router.register_profile(payload)
+
+        capabilities = await active_router.capabilities()
+        capability = next(
+            (item for item in capabilities if item.get("provider") == body.provider),
+            None,
+        )
+        supported = set(capability.get("environments", [])) if capability else set()
+        if (
+            not capability
+            or capability.get("credential_scope") != "provider"
+            or not {"live", "paper"}.issubset(supported)
+        ):
+            raise StudioError(
+                "SHARED_CREDENTIAL_UNSUPPORTED",
+                "선택한 증권사는 실전·모의 공용 키 등록을 지원하지 않습니다.",
+                status_code=422,
+            )
+        if len(body.id) > 122:
+            raise StudioError(
+                "PROFILE_ID_TOO_LONG",
+                "공용 등록의 프로필 ID는 122자 이하여야 합니다.",
+                status_code=422,
+            )
+        profile_ids = {"live": f"{body.id}-live", "paper": f"{body.id}-paper"}
+        existing = {item["id"] for item in await active_router.profiles()}
+        duplicates = existing.intersection(profile_ids.values())
+        if duplicates:
+            raise StudioError(
+                "PROFILE_EXISTS",
+                f"이미 등록된 프로필이 있습니다: {', '.join(sorted(duplicates))}",
+                status_code=409,
+            )
+        created: list[dict] = []
+        try:
+            for environment in ("live", "paper"):
+                item = dict(payload)
+                item["id"] = profile_ids[environment]
+                item["environment"] = environment
+                if body.display_name:
+                    suffix = "실전" if environment == "live" else "모의"
+                    item["display_name"] = f"{body.display_name} · {suffix}"
+                created.append(await active_router.register_profile(item))
+        except StudioError:
+            for item in created:
+                with suppress(StudioError):
+                    await active_router.delete_profile(item["id"])
+            raise
+        return {"shared_credentials": True, "profiles": created}
 
     @app.post("/api/profiles/{profile_id}/check", dependencies=secured)
     async def check_profile(profile_id: str):

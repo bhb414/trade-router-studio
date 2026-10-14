@@ -9,6 +9,17 @@ from trade_router.core.secrets import DpapiSecretStore
 from .errors import StudioError
 
 
+def _validation_message(detail: Any) -> str | None:
+    if not isinstance(detail, list) or not detail:
+        return None
+    first = detail[0]
+    if not isinstance(first, dict):
+        return None
+    field = ".".join(str(item) for item in first.get("loc", [])[1:])
+    message = str(first.get("msg") or "입력값을 확인하세요.")
+    return f"{field}: {message}" if field else message
+
+
 class RouterAdminClient:
     def __init__(self, *, base_url: str | None = None) -> None:
         self.base_url = (base_url or daemon_base_url()).rstrip("/")
@@ -47,7 +58,11 @@ class RouterAdminClient:
             try:
                 body = response.json()
                 code = body.get("code", "ROUTER_ERROR")
-                message = body.get("message", "Trade Router request failed.")
+                message = body.get("message") or _validation_message(body.get("detail"))
+                if not message:
+                    message = (
+                        f"Trade Router 요청이 실패했습니다. (HTTP {response.status_code})"
+                    )
             except ValueError:
                 code = "ROUTER_HTTP_ERROR"
                 message = f"Trade Router returned HTTP {response.status_code}."
@@ -63,8 +78,14 @@ class RouterAdminClient:
     async def profiles(self) -> list[dict[str, Any]]:
         return await self.request("GET", "/v1/profiles")
 
+    async def capabilities(self) -> list[dict[str, Any]]:
+        return await self.request("GET", "/v1/system/capabilities")
+
     async def register_profile(self, body: dict[str, Any]) -> dict[str, Any]:
         return await self.request("POST", "/v1/profiles", json_body=body)
+
+    async def delete_profile(self, profile_id: str) -> None:
+        await self.request("DELETE", f"/v1/profiles/{profile_id}")
 
     async def check_profile(self, profile_id: str) -> dict[str, Any]:
         return await self.request("POST", f"/v1/profiles/{profile_id}/check")

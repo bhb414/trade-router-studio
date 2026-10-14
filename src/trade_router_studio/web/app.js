@@ -1,5 +1,5 @@
 const state = {
-  snapshot: { profiles: [], accounts: [], strategies: [] },
+  snapshot: { profiles: [], accounts: [], strategies: [], capabilities: [] },
   health: null,
   selected: null,
   dirty: false,
@@ -21,7 +21,13 @@ async function api(path, options = {}) {
   if (!response.ok) {
     let body = {};
     try { body = await response.json(); } catch {}
-    throw new Error((body.code ? body.code + ": " : "") + (body.message || "HTTP " + response.status));
+    let message = body.message;
+    if (!message && Array.isArray(body.detail) && body.detail.length) {
+      const first = body.detail[0];
+      const field = Array.isArray(first.loc) ? first.loc.slice(1).join(".") : "";
+      message = (field ? field + ": " : "") + (first.msg || "입력값을 확인하세요.");
+    }
+    throw new Error((body.code ? body.code + ": " : "") + (message || "요청 실패 · HTTP " + response.status));
   }
   return response.status === 204 ? null : response.json();
 }
@@ -77,11 +83,14 @@ function render() {
   ).length;
   $("#strategy-count").textContent = "등록 " + snapshot.strategies.length;
 
+  const providerNames = { kis: "한국투자증권 KIS", namuh: "NH투자증권 NAMUH", simulated: "시뮬레이션" };
+  const environmentNames = { live: "실전", paper: "모의" };
   $("#profiles").innerHTML = table(
     ["별칭", "증권사", "환경", "인증", "작업"],
     snapshot.profiles.map((item) =>
       "<tr><td><strong>" + esc(item.id) + "</strong></td>" +
-      "<td>" + esc(item.provider) + "</td><td>" + esc(item.environment) + "</td>" +
+      "<td>" + esc(providerNames[item.provider] || item.provider) + "</td><td>" +
+      esc(environmentNames[item.environment] || item.environment) + "</td>" +
       '<td><span class="badge ' + (item.secret_configured ? "ready" : "") + '">' +
       (item.secret_configured ? "설정됨" : "불필요/미설정") + "</span></td>" +
       '<td><div class="row-actions"><button class="secondary" data-check-profile="' +
@@ -335,12 +344,62 @@ async function refreshLogs() {
 }
 
 function updateCredentialFields() {
-  const simulated = $("#profile-provider").value === "simulated";
+  const provider = $("#profile-provider").value;
+  const simulated = provider === "simulated";
+  const capability = (state.snapshot.capabilities || []).find(
+    (item) => item.provider === provider,
+  );
+  let environments = capability ? capability.environments : [];
+  if (simulated) environments = ["paper"];
+  const order = ["paper", "live"];
+  environments = order.filter((item) => environments.includes(item));
+  if (!environments.length) environments = provider === "namuh" ? ["live"] : ["paper", "live"];
+  if (capability && capability.credential_scope === "provider" &&
+      environments.includes("paper") && environments.includes("live")) {
+    environments.push("both");
+  }
+  const current = $("#profile-environment").value;
+  $("#profile-environment").innerHTML = environments.map(
+    (item) => '<option value="' + item + '">' +
+      (item === "both" ? "실전·모의 공용 등록" : (item === "live" ? "실전" : "모의")) + "</option>",
+  ).join("");
+  if (environments.includes(current)) $("#profile-environment").value = current;
   $("#credential-fields").classList.toggle("hidden", simulated);
   $("#profile-key").required = !simulated;
   $("#profile-secret").required = !simulated;
   $("#profile-environment").disabled = simulated;
   if (simulated) $("#profile-environment").value = "paper";
+  updateCredentialScope();
+}
+
+function updateCredentialScope() {
+  const provider = $("#profile-provider").value;
+  const environment = $("#profile-environment").value;
+  const capability = (state.snapshot.capabilities || []).find(
+    (item) => item.provider === provider,
+  );
+  const scope = capability ? capability.credential_scope : (provider === "simulated" ? "none" : "environment");
+  const field = $("#profile-credential-scope");
+  const help = $("#credential-scope-help");
+  if (scope === "none") {
+    field.value = "인증키 없음";
+    help.textContent = "시뮬레이션 프로필은 App Key와 App Secret을 사용하지 않습니다.";
+  } else if (scope === "provider") {
+    field.value = "실전·모의 공용";
+    help.textContent = environment === "both"
+      ? "같은 키로 ID 뒤에 -live와 -paper가 붙은 프로필 두 개를 등록합니다."
+      : "같은 인증키를 실전과 모의 프로필에서 함께 사용할 수 있습니다.";
+  } else {
+    field.value = environment === "live" ? "실전 환경 전용" : "모의 환경 전용";
+    help.textContent = "실전 키와 모의 키를 구분해 각각 별도 프로필로 등록합니다.";
+  }
+  if (provider === "namuh") {
+    $("#environment-help").textContent = "NAMUH PLUG는 실전·모의를 지원하며 같은 인증키를 두 환경 프로필에 사용할 수 있습니다.";
+  } else if (provider === "kis") {
+    $("#environment-help").textContent = "KIS는 실전용과 모의용 App Key·App Secret을 따로 발급합니다.";
+  } else {
+    $("#environment-help").textContent = "주문이 외부 증권사로 전송되지 않는 개발용 환경입니다.";
+  }
 }
 
 function showProfileDialog() {
@@ -363,10 +422,10 @@ async function registerProfile(event) {
     settings: {},
   };
   try {
-    await api("/api/profiles", { method: "POST", body: JSON.stringify(body) });
+    const result = await api("/api/profiles", { method: "POST", body: JSON.stringify(body) });
     $("#profile-secret").value = "";
     $("#profile-dialog").close();
-    toast("연결 프로필을 등록했습니다.");
+    toast(result.shared_credentials ? "실전·모의 프로필 두 개를 등록했습니다." : "연결 프로필을 등록했습니다.");
     await refresh();
   } catch (error) {
     toast(error.message, true);
@@ -481,6 +540,7 @@ $("#new-profile").onclick = showProfileDialog;
 $("#new-account").onclick = showAccountDialog;
 $("#new-strategy").onclick = showStrategyDialog;
 $("#profile-provider").onchange = updateCredentialFields;
+$("#profile-environment").onchange = updateCredentialScope;
 $("#profile-form").onsubmit = registerProfile;
 $("#account-form").onsubmit = registerAccount;
 $("#register-form").onsubmit = registerStrategy;

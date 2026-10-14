@@ -11,11 +11,41 @@ class StubRouter:
     base_url = "http://router.test"
     token = "router-token"
 
+    def __init__(self):
+        self.registered_profiles = []
+
     async def health(self):
         return {"status": "ready", "accepting_orders": True}
 
     async def profiles(self):
-        return [{"id": "simulated-main", "provider": "simulated"}]
+        return [
+            {"id": "simulated-main", "provider": "simulated"},
+            *self.registered_profiles,
+        ]
+
+    async def capabilities(self):
+        return [
+            {
+                "provider": "kis",
+                "environments": ["live", "paper"],
+                "credential_scope": "environment",
+            },
+            {
+                "provider": "namuh",
+                "environments": ["live", "paper"],
+                "credential_scope": "provider",
+            },
+            {
+                "provider": "simulated",
+                "environments": ["paper"],
+                "credential_scope": "none",
+            }
+        ]
+
+    async def delete_profile(self, profile_id):
+        self.registered_profiles = [
+            item for item in self.registered_profiles if item["id"] != profile_id
+        ]
 
     async def accounts(self):
         return [{"alias": "paper-main", "profile_id": "simulated-main"}]
@@ -40,12 +70,14 @@ class StubRouter:
         }
 
     async def register_profile(self, body):
-        return {
+        profile = {
             "id": body["id"],
             "provider": body["provider"],
             "environment": body["environment"],
             "secret_configured": bool(body.get("app_key")),
         }
+        self.registered_profiles.append(profile)
+        return profile
 
     async def check_profile(self, profile_id):
         return {"profile_id": profile_id, "ok": True}
@@ -172,3 +204,59 @@ async def test_web_cookie_survives_studio_restart(tmp_path):
         ) as client,
     ):
         assert (await client.get("/api/health")).status_code == 200
+
+
+async def test_profile_validation_returns_clear_message_and_shared_registration(
+    tmp_path,
+):
+    active_paths = paths(tmp_path)
+    active_paths.ensure()
+    router = StubRouter()
+    app = create_app(
+        paths=active_paths,
+        store=StudioStore(active_paths.database),
+        router=router,
+        studio_token="studio-token",
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://studio.test",
+            headers={"authorization": "Bearer studio-token"},
+        ) as client,
+    ):
+        invalid_id = await client.post(
+            "/api/profiles",
+            json={"id": "나무 실전", "provider": "namuh", "environment": "live"},
+        )
+        assert invalid_id.status_code == 422
+        assert "프로필 ID" in invalid_id.json()["message"]
+
+        missing_key = await client.post(
+            "/api/profiles",
+            json={"id": "kis-live", "provider": "kis", "environment": "live"},
+        )
+        assert missing_key.status_code == 422
+        assert missing_key.json()["message"] == "App Key를 입력하세요."
+
+        shared = await client.post(
+            "/api/profiles",
+            json={
+                "id": "nh-main",
+                "provider": "namuh",
+                "environment": "both",
+                "app_key": "shared-key",
+                "app_secret": "shared-secret",
+            },
+        )
+        assert shared.status_code == 200
+        assert shared.json()["shared_credentials"] is True
+        assert [item["id"] for item in shared.json()["profiles"]] == [
+            "nh-main-live",
+            "nh-main-paper",
+        ]
+        assert [item["environment"] for item in router.registered_profiles] == [
+            "live",
+            "paper",
+        ]
