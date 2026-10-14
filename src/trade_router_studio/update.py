@@ -204,7 +204,13 @@ class UpdateService:
         )
         for pid in wait_pids:
             arguments.extend(["--wait-pid", str(pid)])
-        flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS if os.name == "nt" else 0
+        flags = (
+            subprocess.CREATE_NO_WINDOW
+            | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_BREAKAWAY_FROM_JOB
+            if os.name == "nt"
+            else 0
+        )
         subprocess.Popen(
             arguments,
             stdin=subprocess.DEVNULL,

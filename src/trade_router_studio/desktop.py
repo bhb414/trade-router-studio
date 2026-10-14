@@ -87,7 +87,9 @@ def _create_shutdown_job() -> None:
     if not job:
         return
     information = ExtendedLimitInformation()
-    information.BasicLimitInformation.LimitFlags = 0x00002000
+    # Keep services tied to the console while allowing the updater to request a
+    # deliberate breakaway so it survives the console job closing.
+    information.BasicLimitInformation.LimitFlags = 0x00002000 | 0x00000800
     if not kernel.SetInformationJobObject(
         job, 9, ctypes.byref(information), ctypes.sizeof(information)
     ):

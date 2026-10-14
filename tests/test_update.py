@@ -135,3 +135,4 @@ def test_installer_waits_for_console_studio_and_router(tmp_path, monkeypatch):
         if value == "--wait-pid"
     }
     assert waited == {os.getpid(), 111, 222}
+    assert launched[0][1]["creationflags"] & 0x01000000
