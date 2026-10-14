@@ -25,6 +25,7 @@ async def run(source_path: Path) -> None:
         id=os.environ["TRADE_STUDIO_STRATEGY_ID"],
         trading_account=os.environ["TRADE_STUDIO_ACCOUNT"],
         market_data=os.environ["TRADE_STUDIO_MARKET_DATA"],
+        market_environment=os.environ["TRADE_STUDIO_MARKET_ENVIRONMENT"],
     )
     async with AsyncTradeRouter(
         strategy=config,

@@ -89,7 +89,9 @@ version, and pushes the matching tag. The tag starts the Windows release workflo
 
 The dashboard can complete the initial setup without using the Router CLI:
 
-1. Use **연결 등록** to add a KIS, NAMUH, or simulated connection and check it.
+1. Use **연결 등록** to save KIS, NAMUH, or simulated credentials. Choose whether
+   the credentials are for live, paper, or both environments. Accounts and strategy
+   market data select their actual environment separately.
 2. Use **계좌 등록** to bind an account alias and set central risk limits.
 3. Open **스크립트**, register a strategy, and save its Python source.
 4. Enable the account and strategy separately before starting an order-capable script.

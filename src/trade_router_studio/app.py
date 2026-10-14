@@ -326,62 +326,16 @@ def create_app(
     @app.post("/api/strategies", dependencies=secured)
     async def register_strategy(body: StrategyRegistration):
         return await active_router.register_strategy(
-            body.id, body.trading_account, body.market_data
+            body.id,
+            body.trading_account,
+            body.market_data,
+            body.market_environment,
         )
 
     @app.post("/api/profiles", dependencies=secured)
     async def register_profile(body: ProfileRegistration):
         payload = body.model_dump(mode="json")
-        if body.environment != "both":
-            return await active_router.register_profile(payload)
-
-        capabilities = await active_router.capabilities()
-        capability = next(
-            (item for item in capabilities if item.get("provider") == body.provider),
-            None,
-        )
-        supported = set(capability.get("environments", [])) if capability else set()
-        if (
-            not capability
-            or capability.get("credential_scope") != "provider"
-            or not {"live", "paper"}.issubset(supported)
-        ):
-            raise StudioError(
-                "SHARED_CREDENTIAL_UNSUPPORTED",
-                "선택한 증권사는 실전·모의 공용 키 등록을 지원하지 않습니다.",
-                status_code=422,
-            )
-        if len(body.id) > 122:
-            raise StudioError(
-                "PROFILE_ID_TOO_LONG",
-                "공용 등록의 프로필 ID는 122자 이하여야 합니다.",
-                status_code=422,
-            )
-        profile_ids = {"live": f"{body.id}-live", "paper": f"{body.id}-paper"}
-        existing = {item["id"] for item in await active_router.profiles()}
-        duplicates = existing.intersection(profile_ids.values())
-        if duplicates:
-            raise StudioError(
-                "PROFILE_EXISTS",
-                f"이미 등록된 프로필이 있습니다: {', '.join(sorted(duplicates))}",
-                status_code=409,
-            )
-        created: list[dict] = []
-        try:
-            for environment in ("live", "paper"):
-                item = dict(payload)
-                item["id"] = profile_ids[environment]
-                item["environment"] = environment
-                if body.display_name:
-                    suffix = "실전" if environment == "live" else "모의"
-                    item["display_name"] = f"{body.display_name} · {suffix}"
-                created.append(await active_router.register_profile(item))
-        except StudioError:
-            for item in created:
-                with suppress(StudioError):
-                    await active_router.delete_profile(item["id"])
-            raise
-        return {"shared_credentials": True, "profiles": created}
+        return await active_router.register_profile(payload)
 
     @app.post("/api/profiles/{profile_id}/check", dependencies=secured)
     async def check_profile(profile_id: str):

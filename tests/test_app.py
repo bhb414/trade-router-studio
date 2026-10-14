@@ -19,7 +19,11 @@ class StubRouter:
 
     async def profiles(self):
         return [
-            {"id": "simulated-main", "provider": "simulated"},
+            {
+                "id": "simulated-main",
+                "provider": "simulated",
+                "usage": "paper",
+            },
             *self.registered_profiles,
         ]
 
@@ -48,7 +52,13 @@ class StubRouter:
         ]
 
     async def accounts(self):
-        return [{"alias": "paper-main", "profile_id": "simulated-main"}]
+        return [
+            {
+                "alias": "paper-main",
+                "profile_id": "simulated-main",
+                "environment": "paper",
+            }
+        ]
 
     async def strategies(self):
         return [
@@ -56,24 +66,28 @@ class StubRouter:
                 "id": "sample",
                 "trading_account": "paper-main",
                 "market_data": "simulated-main",
+                "market_environment": "paper",
             }
         ]
 
     async def strategy(self, strategy_id):
         return (await self.strategies())[0] | {"id": strategy_id}
 
-    async def register_strategy(self, strategy_id, trading_account, market_data):
+    async def register_strategy(
+        self, strategy_id, trading_account, market_data, market_environment=None
+    ):
         return {
             "id": strategy_id,
             "trading_account": trading_account,
             "market_data": market_data,
+            "market_environment": market_environment,
         }
 
     async def register_profile(self, body):
         profile = {
             "id": body["id"],
             "provider": body["provider"],
-            "environment": body["environment"],
+            "usage": body["usage"],
             "secret_configured": bool(body.get("app_key")),
         }
         self.registered_profiles.append(profile)
@@ -137,7 +151,7 @@ async def test_web_auth_and_script_save(tmp_path):
             json={
                 "id": "paper-test",
                 "provider": "simulated",
-                "environment": "paper",
+                "usage": "paper",
             },
         )
         assert profile.status_code == 200
@@ -228,14 +242,14 @@ async def test_profile_validation_returns_clear_message_and_shared_registration(
     ):
         invalid_id = await client.post(
             "/api/profiles",
-            json={"id": "나무 실전", "provider": "namuh", "environment": "live"},
+            json={"id": "나무 실전", "provider": "namuh", "usage": "live"},
         )
         assert invalid_id.status_code == 422
         assert "프로필 ID" in invalid_id.json()["message"]
 
         missing_key = await client.post(
             "/api/profiles",
-            json={"id": "kis-live", "provider": "kis", "environment": "live"},
+            json={"id": "kis-live", "provider": "kis", "usage": "live"},
         )
         assert missing_key.status_code == 422
         assert missing_key.json()["message"] == "App Key를 입력하세요."
@@ -245,18 +259,12 @@ async def test_profile_validation_returns_clear_message_and_shared_registration(
             json={
                 "id": "nh-main",
                 "provider": "namuh",
-                "environment": "both",
+                "usage": "shared",
                 "app_key": "shared-key",
                 "app_secret": "shared-secret",
             },
         )
         assert shared.status_code == 200
-        assert shared.json()["shared_credentials"] is True
-        assert [item["id"] for item in shared.json()["profiles"]] == [
-            "nh-main-live",
-            "nh-main-paper",
-        ]
-        assert [item["environment"] for item in router.registered_profiles] == [
-            "live",
-            "paper",
-        ]
+        assert shared.json()["id"] == "nh-main"
+        assert shared.json()["usage"] == "shared"
+        assert [item["usage"] for item in router.registered_profiles] == ["shared"]

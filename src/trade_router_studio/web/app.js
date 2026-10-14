@@ -85,12 +85,13 @@ function render() {
 
   const providerNames = { kis: "한국투자증권 KIS", namuh: "NH투자증권 NAMUH", simulated: "시뮬레이션" };
   const environmentNames = { live: "실전", paper: "모의" };
+  const usageNames = { live: "실전용", paper: "모의용", shared: "실전·모의 공용" };
   $("#profiles").innerHTML = table(
-    ["별칭", "증권사", "환경", "인증", "작업"],
+    ["별칭", "증권사", "인증정보 용도", "인증", "작업"],
     snapshot.profiles.map((item) =>
       "<tr><td><strong>" + esc(item.id) + "</strong></td>" +
       "<td>" + esc(providerNames[item.provider] || item.provider) + "</td><td>" +
-      esc(environmentNames[item.environment] || item.environment) + "</td>" +
+      esc(usageNames[item.usage] || item.usage) + "</td>" +
       '<td><span class="badge ' + (item.secret_configured ? "ready" : "") + '">' +
       (item.secret_configured ? "설정됨" : "불필요/미설정") + "</span></td>" +
       '<td><div class="row-actions"><button class="secondary" data-check-profile="' +
@@ -99,10 +100,11 @@ function render() {
   );
 
   $("#accounts").innerHTML = table(
-    ["별칭", "프로필", "계좌", "주문", "작업"],
+    ["별칭", "프로필", "환경", "계좌", "주문", "작업"],
     snapshot.accounts.map((item) =>
       "<tr><td><strong>" + esc(item.alias) + "</strong></td>" +
-      "<td>" + esc(item.profile_id) + "</td><td>" + esc(item.masked_account) + "</td>" +
+      "<td>" + esc(item.profile_id) + "</td><td>" +
+      esc(environmentNames[item.environment] || item.environment) + "</td><td>" + esc(item.masked_account) + "</td>" +
       '<td><span class="badge ' + (item.armed ? "ready" : "") + '">' +
       (item.armed ? "허용" : "차단") + "</span></td>" +
       '<td><div class="row-actions"><button class="' + (item.armed ? "danger" : "secondary") +
@@ -112,12 +114,13 @@ function render() {
   );
 
   $("#strategies").innerHTML = table(
-    ["전략", "거래 계좌", "시세", "승인", "프로세스", "작업"],
+    ["전략", "거래 계좌", "시세", "시세 환경", "승인", "프로세스", "작업"],
     snapshot.strategies.map((item) => {
       const processState = item.process ? item.process.state : "stopped";
       return "<tr><td><strong>" + esc(item.strategy.id) + "</strong></td>" +
         "<td>" + esc(item.strategy.trading_account) + "</td>" +
         "<td>" + esc(item.strategy.market_data) + "</td>" +
+        "<td>" + esc(environmentNames[item.strategy.market_environment] || item.strategy.market_environment) + "</td>" +
         '<td><span class="badge ' + (item.strategy.armed ? "ready" : "") + '">' +
         (item.strategy.armed ? "허용" : "차단") + "</span></td>" +
         '<td><span class="badge ' + esc(processState) + '">' + esc(processState) + "</span></td>" +
@@ -349,56 +352,32 @@ function updateCredentialFields() {
   const capability = (state.snapshot.capabilities || []).find(
     (item) => item.provider === provider,
   );
-  let environments = capability ? capability.environments : [];
-  if (simulated) environments = ["paper"];
+  let usages = capability ? capability.environments : [];
+  if (simulated) usages = ["paper"];
   const order = ["paper", "live"];
-  environments = order.filter((item) => environments.includes(item));
-  if (!environments.length) environments = provider === "namuh" ? ["live"] : ["paper", "live"];
+  usages = order.filter((item) => usages.includes(item));
+  if (!usages.length) usages = provider === "namuh" ? ["live"] : ["paper", "live"];
   if (capability && capability.credential_scope === "provider" &&
-      environments.includes("paper") && environments.includes("live")) {
-    environments.push("both");
+      usages.includes("paper") && usages.includes("live")) {
+    usages.push("shared");
   }
-  const current = $("#profile-environment").value;
-  $("#profile-environment").innerHTML = environments.map(
+  const current = $("#profile-usage").value;
+  $("#profile-usage").innerHTML = usages.map(
     (item) => '<option value="' + item + '">' +
-      (item === "both" ? "실전·모의 공용 등록" : (item === "live" ? "실전" : "모의")) + "</option>",
+      (item === "shared" ? "실전·모의 공용" : (item === "live" ? "실전용" : "모의용")) + "</option>",
   ).join("");
-  if (environments.includes(current)) $("#profile-environment").value = current;
+  if (usages.includes(current)) $("#profile-usage").value = current;
   $("#credential-fields").classList.toggle("hidden", simulated);
   $("#profile-key").required = !simulated;
   $("#profile-secret").required = !simulated;
-  $("#profile-environment").disabled = simulated;
-  if (simulated) $("#profile-environment").value = "paper";
-  updateCredentialScope();
-}
-
-function updateCredentialScope() {
-  const provider = $("#profile-provider").value;
-  const environment = $("#profile-environment").value;
-  const capability = (state.snapshot.capabilities || []).find(
-    (item) => item.provider === provider,
-  );
-  const scope = capability ? capability.credential_scope : (provider === "simulated" ? "none" : "environment");
-  const field = $("#profile-credential-scope");
-  const help = $("#credential-scope-help");
-  if (scope === "none") {
-    field.value = "인증키 없음";
-    help.textContent = "시뮬레이션 프로필은 App Key와 App Secret을 사용하지 않습니다.";
-  } else if (scope === "provider") {
-    field.value = "실전·모의 공용";
-    help.textContent = environment === "both"
-      ? "같은 키로 ID 뒤에 -live와 -paper가 붙은 프로필 두 개를 등록합니다."
-      : "같은 인증키를 실전과 모의 프로필에서 함께 사용할 수 있습니다.";
-  } else {
-    field.value = environment === "live" ? "실전 환경 전용" : "모의 환경 전용";
-    help.textContent = "실전 키와 모의 키를 구분해 각각 별도 프로필로 등록합니다.";
-  }
+  $("#profile-usage").disabled = simulated;
+  if (simulated) $("#profile-usage").value = "paper";
   if (provider === "namuh") {
-    $("#environment-help").textContent = "NAMUH PLUG는 실전·모의를 지원하며 같은 인증키를 두 환경 프로필에 사용할 수 있습니다.";
+    $("#usage-help").textContent = "NAMUH PLUG 인증정보는 실전용·모의용·실전과 모의 공용으로 표시할 수 있습니다. 실제 접속 환경은 계좌와 전략에서 정합니다.";
   } else if (provider === "kis") {
-    $("#environment-help").textContent = "KIS는 실전용과 모의용 App Key·App Secret을 따로 발급합니다.";
+    $("#usage-help").textContent = "KIS는 실전용과 모의용 App Key·App Secret을 따로 발급하므로 해당 용도를 선택합니다.";
   } else {
-    $("#environment-help").textContent = "주문이 외부 증권사로 전송되지 않는 개발용 환경입니다.";
+    $("#usage-help").textContent = "외부 증권사 인증정보가 없는 개발·테스트용입니다.";
   }
 }
 
@@ -415,7 +394,7 @@ async function registerProfile(event) {
   const body = {
     id: $("#profile-id").value.trim(),
     provider,
-    environment: provider === "simulated" ? "paper" : $("#profile-environment").value,
+    usage: provider === "simulated" ? "paper" : $("#profile-usage").value,
     display_name: $("#profile-name").value.trim() || null,
     app_key: provider === "simulated" ? null : $("#profile-key").value.trim(),
     app_secret: provider === "simulated" ? null : $("#profile-secret").value,
@@ -425,7 +404,7 @@ async function registerProfile(event) {
     const result = await api("/api/profiles", { method: "POST", body: JSON.stringify(body) });
     $("#profile-secret").value = "";
     $("#profile-dialog").close();
-    toast(result.shared_credentials ? "실전·모의 프로필 두 개를 등록했습니다." : "연결 프로필을 등록했습니다.");
+    toast("인증정보 프로필을 등록했습니다.");
     await refresh();
   } catch (error) {
     toast(error.message, true);
@@ -443,8 +422,22 @@ function showAccountDialog() {
     (item) => '<option value="' + esc(item.id) + '">' + esc(item.id) +
       " · " + esc(item.provider) + "</option>",
   ).join("");
+  updateEnvironmentSelect("#account-profile", "#account-environment");
   $("#account-dialog").showModal();
   $("#account-alias").focus();
+}
+
+function updateEnvironmentSelect(profileSelector, environmentSelector) {
+  const profile = state.snapshot.profiles.find((item) => item.id === $(profileSelector).value);
+  if (!profile) return;
+  const environments = profile.usage === "shared" ? ["paper", "live"] : [profile.usage];
+  const select = $(environmentSelector);
+  const current = select.value;
+  select.innerHTML = environments.map(
+    (item) => '<option value="' + item + '">' + (item === "live" ? "실전" : "모의") + "</option>",
+  ).join("");
+  if (environments.includes(current)) select.value = current;
+  select.disabled = environments.length === 1;
 }
 
 function optionalNumber(selector) {
@@ -470,6 +463,7 @@ async function registerAccount(event) {
       body: JSON.stringify({
         alias: $("#account-alias").value.trim(),
         profile_id: $("#account-profile").value,
+        environment: $("#account-environment").value,
         account_number: $("#account-number").value.trim(),
         risk,
       }),
@@ -497,6 +491,7 @@ function showStrategyDialog() {
     (item) => '<option value="' + esc(item.id) + '">' + esc(item.id) +
       " · " + esc(item.provider) + "</option>",
   ).join("");
+  updateEnvironmentSelect("#strategy-market", "#strategy-market-environment");
   $("#register").showModal();
   $("#strategy-id").focus();
 }
@@ -511,6 +506,7 @@ async function registerStrategy(event) {
         id,
         trading_account: $("#strategy-account").value,
         market_data: $("#strategy-market").value,
+        market_environment: $("#strategy-market-environment").value,
       }),
     });
     $("#register").close();
@@ -540,7 +536,8 @@ $("#new-profile").onclick = showProfileDialog;
 $("#new-account").onclick = showAccountDialog;
 $("#new-strategy").onclick = showStrategyDialog;
 $("#profile-provider").onchange = updateCredentialFields;
-$("#profile-environment").onchange = updateCredentialScope;
+$("#account-profile").onchange = () => updateEnvironmentSelect("#account-profile", "#account-environment");
+$("#strategy-market").onchange = () => updateEnvironmentSelect("#strategy-market", "#strategy-market-environment");
 $("#profile-form").onsubmit = registerProfile;
 $("#account-form").onsubmit = registerAccount;
 $("#register-form").onsubmit = registerStrategy;

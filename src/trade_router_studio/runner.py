@@ -218,6 +218,9 @@ class ScriptSupervisor:
                     "TRADE_STUDIO_STRATEGY_ID": strategy["id"],
                     "TRADE_STUDIO_ACCOUNT": strategy["trading_account"],
                     "TRADE_STUDIO_MARKET_DATA": strategy["market_data"],
+                    "TRADE_STUDIO_MARKET_ENVIRONMENT": strategy[
+                        "market_environment"
+                    ],
                 }
             )
             status.state = "starting"

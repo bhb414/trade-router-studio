@@ -111,7 +111,11 @@ class RouterAdminClient:
         return await self.request("POST", f"/v1/strategies/{strategy_id}/{action}")
 
     async def register_strategy(
-        self, strategy_id: str, trading_account: str, market_data: str
+        self,
+        strategy_id: str,
+        trading_account: str,
+        market_data: str,
+        market_environment: Any = None,
     ) -> dict[str, Any]:
         return await self.request(
             "POST",
@@ -121,6 +125,11 @@ class RouterAdminClient:
                     "id": strategy_id,
                     "trading_account": trading_account,
                     "market_data": market_data,
+                    "market_environment": (
+                        market_environment.value
+                        if hasattr(market_environment, "value")
+                        else market_environment
+                    ),
                     "risk": {},
                 }
             },

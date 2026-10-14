@@ -37,5 +37,5 @@ trade_router_studio = ["web/*.html", "web/*.css", "web/*.js"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-pythonpath = ["src"]
+pythonpath = ["src", "../trade-router/src"]
 testpaths = ["tests"]
