@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.runtime/
+workspace/
+data/
+logs/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
