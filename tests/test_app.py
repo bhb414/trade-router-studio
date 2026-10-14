@@ -261,6 +261,9 @@ async def test_profile_validation_returns_clear_message_and_shared_registration(
         page = await client.get("/")
         assert "증권사 API 연결 추가" in page.text
         assert "증권사를 선택하면 필요한 인증 항목이 자동으로 표시됩니다." in page.text
+        assert "내 PC에서 실행되는 Python 자동매매" in page.text
+        assert 'id="editor" class="view active"' in page.text
+        assert "Trade Router 기반 전략 프로그램" not in page.text
         assert "연결 프로필" not in page.text
         assert "키 사용 범위" not in page.text
 

@@ -6,10 +6,18 @@ const state = {
   update: null,
   refreshing: false,
   refreshingLogs: false,
+  initialized: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+const processNames = {
+  stopped: "중지",
+  starting: "시작 중",
+  running: "실행 중",
+  backoff: "재시작 대기",
+  failed: "오류",
+};
 
 async function api(path, options = {}) {
   let response;
@@ -70,6 +78,11 @@ async function refresh() {
     state.health = results[0];
     state.snapshot = results[1];
     render();
+    if (!state.initialized) {
+      state.initialized = true;
+      const first = state.snapshot.strategies[0];
+      if (!state.selected && first) await selectStrategy(first.strategy.id);
+    }
   } catch (error) {
     toast(error.message, true);
     $("#status-text").textContent = "연결 안 됨";
@@ -82,17 +95,17 @@ function render() {
   const health = state.health;
   const snapshot = state.snapshot;
   $("#status-dot").className = health.status;
-  $("#status-text").textContent = health.status === "ready" ? "Studio 정상" : "Router 확인 필요";
+  $("#status-text").textContent = health.status === "ready" ? "로컬 실행 중" : "연결 확인 필요";
   $("#app-version").textContent = "v" + health.version;
-  $("#router-state").textContent = health.router.status;
-  $("#order-state").textContent = health.router.accepting_orders ? "주문 권한 열림" : "주문 권한 닫힘";
+  $("#router-state").textContent = health.router.status === "ready" ? "정상" : "확인 필요";
+  $("#order-state").textContent = health.router.accepting_orders ? "주문 기능 준비됨" : "주문 기능 중지됨";
   $("#profile-count").textContent = snapshot.profiles.length;
   $("#account-count").textContent = snapshot.accounts.length;
-  $("#account-armed").textContent = "허용 " + snapshot.accounts.filter((item) => item.armed).length;
+  $("#account-armed").textContent = "주문 허용 " + snapshot.accounts.filter((item) => item.armed).length;
   $("#running-count").textContent = snapshot.strategies.filter(
     (item) => item.process && item.process.state === "running",
   ).length;
-  $("#strategy-count").textContent = "등록 " + snapshot.strategies.length;
+  $("#strategy-count").textContent = "스크립트 " + snapshot.strategies.length;
 
   const providerNames = { kis: "한국투자증권 KIS", namuh: "NH투자증권 NAMUH", simulated: "시뮬레이션" };
   const environmentNames = { live: "실전 계좌", paper: "모의 계좌" };
@@ -137,7 +150,8 @@ function render() {
         "<td>" + esc(item.strategy.market_data) + "</td>" +
         '<td><span class="badge ' + (item.strategy.armed ? "ready" : "") + '">' +
         (item.strategy.armed ? "허용" : "차단") + "</span></td>" +
-        '<td><span class="badge ' + esc(processState) + '">' + esc(processState) + "</span></td>" +
+        '<td><span class="badge ' + esc(processState) + '">' +
+        esc(processNames[processState] || processState) + "</span></td>" +
         '<td><div class="row-actions"><button class="' +
         (item.strategy.armed ? "danger" : "secondary") + '" data-strategy-arm="' +
         esc(item.strategy.id) + '" data-armed="' + item.strategy.armed + '">' +
@@ -273,10 +287,10 @@ function renderList() {
         const processState = item.process ? item.process.state : "stopped";
         return '<div class="strategy-item ' + active + '" data-strategy="' +
           esc(item.strategy.id) + '"><strong>' + esc(item.strategy.id) +
-          "</strong><small>" + esc(processState) + " · " +
+          "</strong><small>" + esc(processNames[processState] || processState) + " · " +
           (item.script ? "코드 저장됨" : "코드 없음") + "</small></div>";
       }).join("")
-    : '<div class="empty"><span>등록 전략 없음</span></div>';
+    : '<div class="empty"><span>아직 만든 스크립트가 없습니다.</span></div>';
   $$("[data-strategy]").forEach((element) => {
     element.onclick = () => selectStrategy(element.dataset.strategy);
   });
@@ -310,7 +324,7 @@ async function selectStrategy(id) {
 
 function setProcess(process) {
   const badge = $("#process");
-  badge.textContent = process.state;
+  badge.textContent = processNames[process.state] || process.state;
   badge.className = "badge " + process.state;
   const running = ["starting", "running", "backoff"].includes(process.state);
   $("#run").disabled = running;
@@ -340,7 +354,7 @@ async function run() {
   setProcess(await api("/api/strategies/" + encodeURIComponent(state.selected) + "/start", {
     method: "POST",
   }));
-  toast("전략 프로세스를 시작했습니다.");
+  toast("Python 자동매매를 시작했습니다.");
   await refresh();
 }
 
@@ -348,7 +362,7 @@ async function stop() {
   setProcess(await api("/api/strategies/" + encodeURIComponent(state.selected) + "/stop", {
     method: "POST",
   }));
-  toast("전략을 중지했습니다.");
+  toast("Python 자동매매를 중지했습니다.");
   await refresh();
 }
 
@@ -515,7 +529,8 @@ async function registerAccount(event) {
 function showStrategyDialog() {
   const snapshot = state.snapshot;
   if (!snapshot.accounts.length || !snapshot.profiles.length) {
-    toast("먼저 증권사 API 연결과 계좌를 등록하세요.", true);
+    toast("연결 설정에서 증권사 API와 계좌를 먼저 등록하세요.", true);
+    go("dashboard");
     return;
   }
   $("#register-form").reset();
@@ -545,8 +560,9 @@ async function registerStrategy(event) {
       }),
     });
     $("#register").close();
-    toast("전략을 등록했습니다. 주문 권한은 차단 상태입니다.");
+    toast("Python 스크립트를 만들었습니다. 주문 권한은 차단 상태입니다.");
     await refresh();
+    go("editor");
     await selectStrategy(id);
   } catch (error) {
     toast(error.message, true);
@@ -570,6 +586,7 @@ $("#exit-app").onclick = exitApp;
 $("#new-profile").onclick = showProfileDialog;
 $("#new-account").onclick = () => showAccountDialog();
 $("#new-strategy").onclick = showStrategyDialog;
+$("#empty-new-strategy").onclick = showStrategyDialog;
 $("#profile-provider").onchange = updateCredentialFields;
 $("#account-profile").onchange = () => updateEnvironmentSelect("#account-profile", "#account-environment");
 $("#strategy-account").onchange = updateStrategyMarketConnection;

@@ -33,10 +33,10 @@ async def test_github_release_is_downloaded_and_verified(tmp_path):
             return httpx.Response(
                 200,
                 json={
-                    "tag_name": "v0.2.0",
+                    "tag_name": "v0.2.1",
                     "draft": False,
                     "prerelease": False,
-                    "html_url": "https://github.com/bhb414/trade-router-studio/releases/tag/v0.2.0",
+                    "html_url": "https://github.com/bhb414/trade-router-studio/releases/tag/v0.2.1",
                     "published_at": "2026-10-14T12:00:00Z",
                     "assets": [
                         {
@@ -72,7 +72,7 @@ async def test_checksum_mismatch_is_rejected(tmp_path):
             return httpx.Response(
                 200,
                 json={
-                    "tag_name": "v0.2.0",
+                    "tag_name": "v0.2.1",
                     "draft": False,
                     "prerelease": False,
                     "assets": [
