@@ -87,8 +87,13 @@ class RouterAdminClient:
     async def delete_profile(self, profile_id: str) -> None:
         await self.request("DELETE", f"/v1/profiles/{profile_id}")
 
-    async def check_profile(self, profile_id: str) -> dict[str, Any]:
-        return await self.request("POST", f"/v1/profiles/{profile_id}/check")
+    async def check_profile(
+        self, profile_id: str, environment: str | None = None
+    ) -> dict[str, Any]:
+        suffix = f"?environment={environment}" if environment else ""
+        return await self.request(
+            "POST", f"/v1/profiles/{profile_id}/check{suffix}"
+        )
 
     async def accounts(self) -> list[dict[str, Any]]:
         return await self.request("GET", "/v1/accounts")

@@ -13,6 +13,8 @@ class StubRouter:
 
     def __init__(self):
         self.registered_profiles = []
+        self.registered_accounts = []
+        self.checked_profiles = []
 
     async def health(self):
         return {"status": "ready", "accepting_orders": True}
@@ -57,7 +59,8 @@ class StubRouter:
                 "alias": "paper-main",
                 "profile_id": "simulated-main",
                 "environment": "paper",
-            }
+            },
+            *self.registered_accounts,
         ]
 
     async def strategies(self):
@@ -93,16 +96,20 @@ class StubRouter:
         self.registered_profiles.append(profile)
         return profile
 
-    async def check_profile(self, profile_id):
+    async def check_profile(self, profile_id, environment=None):
+        self.checked_profiles.append((profile_id, environment))
         return {"profile_id": profile_id, "ok": True}
 
     async def register_account(self, body):
-        return {
+        account = {
             "alias": body["alias"],
             "profile_id": body["profile_id"],
+            "environment": body.get("environment") or "paper",
             "masked_account": "******78-01",
             "armed": False,
         }
+        self.registered_accounts.append(account)
+        return account
 
     async def set_account_armed(self, alias, armed):
         return {"alias": alias, "armed": armed}
@@ -126,10 +133,11 @@ def paths(tmp_path):
 async def test_web_auth_and_script_save(tmp_path):
     active_paths = paths(tmp_path)
     active_paths.ensure()
+    router = StubRouter()
     app = create_app(
         paths=active_paths,
         store=StudioStore(active_paths.database),
-        router=StubRouter(),
+        router=router,
         studio_token="studio-token",
     )
     async with (
@@ -157,7 +165,7 @@ async def test_web_auth_and_script_save(tmp_path):
         assert profile.status_code == 200
         assert profile.json()["provider"] == "simulated"
         checked = await client.post("/api/profiles/paper-test/check")
-        assert checked.json()["ok"] is True
+        assert checked.json()["status"] == "account_required"
         account = await client.post(
             "/api/accounts",
             json={
@@ -169,6 +177,9 @@ async def test_web_auth_and_script_save(tmp_path):
         )
         assert account.status_code == 200
         assert account.json()["armed"] is False
+        checked = await client.post("/api/profiles/paper-test/check")
+        assert checked.json()["ok"] is True
+        assert router.checked_profiles == [("paper-test", "paper")]
         assert (await client.post("/api/accounts/paper-account/arm")).json()[
             "armed"
         ] is True

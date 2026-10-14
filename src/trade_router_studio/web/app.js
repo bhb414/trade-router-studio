@@ -10,10 +10,15 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: { "content-type": "application/json", ...(options.headers || {}) },
-  });
+  let response;
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers: { "content-type": "application/json", ...(options.headers || {}) },
+    });
+  } catch {
+    throw new Error("Studio 서버와 연결할 수 없습니다. Trade Router Studio 실행 창이 켜져 있는지 확인하세요.");
+  }
   if (response.status === 401) {
     $("#auth-warning").classList.remove("hidden");
     throw new Error("웹 인증이 만료되었습니다.");
@@ -87,14 +92,20 @@ function render() {
   const environmentNames = { live: "실전 계좌", paper: "모의 계좌" };
   $("#profiles").innerHTML = table(
     ["연결 이름", "증권사", "인증", "작업"],
-    snapshot.profiles.map((item) =>
+    snapshot.profiles.map((item) => {
+      const hasAccount = snapshot.accounts.some((account) => account.profile_id === item.id);
+      const action = hasAccount
+        ? '<button class="secondary" data-check-profile="' + esc(item.id) + '">연결 확인</button>'
+        : '<button class="secondary" data-add-account-profile="' + esc(item.id) +
+          '">계좌 등록</button>';
+      return (
       "<tr><td><strong>" + esc(item.id) + "</strong></td>" +
       "<td>" + esc(providerNames[item.provider] || item.provider) + "</td>" +
       '<td><span class="badge ' + (item.secret_configured ? "ready" : "") + '">' +
       (item.secret_configured ? "설정됨" : "불필요/미설정") + "</span></td>" +
-      '<td><div class="row-actions"><button class="secondary" data-check-profile="' +
-      esc(item.id) + '">연결 확인</button></div></td></tr>',
-    ),
+      '<td><div class="row-actions">' + action + "</div></td></tr>"
+      );
+    }),
   );
 
   $("#accounts").innerHTML = table(
@@ -204,6 +215,11 @@ function bindRowActions() {
           "/api/profiles/" + encodeURIComponent(button.dataset.checkProfile) + "/check",
           { method: "POST" },
         );
+        if (result.status === "account_required") {
+          toast(result.message);
+          showAccountDialog(button.dataset.checkProfile);
+          return;
+        }
         toast(result.ok ? "연결이 정상입니다." : "연결 확인을 마쳤습니다.");
         await refresh();
       } catch (error) {
@@ -212,6 +228,9 @@ function bindRowActions() {
         button.disabled = false;
       }
     };
+  });
+  $$('[data-add-account-profile]').forEach((button) => {
+    button.onclick = () => showAccountDialog(button.dataset.addAccountProfile);
   });
   $$("[data-account-arm]").forEach((button) => {
     button.onclick = () => changeArm(
@@ -395,7 +414,7 @@ async function registerProfile(event) {
   }
 }
 
-function showAccountDialog() {
+function showAccountDialog(profileId = null) {
   const profiles = state.snapshot.profiles;
   if (!profiles.length) {
     toast("증권사 API 연결을 먼저 추가하세요.", true);
@@ -406,6 +425,9 @@ function showAccountDialog() {
     (item) => '<option value="' + esc(item.id) + '">' + esc(item.id) +
       " · " + esc(item.provider) + "</option>",
   ).join("");
+  if (typeof profileId === "string" && profiles.some((item) => item.id === profileId)) {
+    $("#account-profile").value = profileId;
+  }
   updateEnvironmentSelect("#account-profile", "#account-environment");
   $("#account-dialog").showModal();
   $("#account-alias").focus();
@@ -427,7 +449,7 @@ function updateEnvironmentSelect(profileSelector, environmentSelector) {
   if (profileSelector === "#account-profile") {
     $("#account-type-help").textContent = environments.length === 1
       ? (environments[0] === "live" ? "실전용 키이므로 실전 계좌로 자동 지정됩니다." : "모의용 키이므로 모의 계좌로 자동 지정됩니다.")
-      : "공용 키입니다. 등록할 계좌가 실전 계좌인지 모의 계좌인지 선택하세요.";
+      : "계좌 구분을 선택하면 해당 증권사 API 서버로 자동 연결합니다.";
   }
 }
 
@@ -536,7 +558,7 @@ $("#refresh").onclick = refresh;
 $("#update-app").onclick = handleUpdate;
 $("#exit-app").onclick = exitApp;
 $("#new-profile").onclick = showProfileDialog;
-$("#new-account").onclick = showAccountDialog;
+$("#new-account").onclick = () => showAccountDialog();
 $("#new-strategy").onclick = showStrategyDialog;
 $("#profile-provider").onchange = updateCredentialFields;
 $("#account-profile").onchange = () => updateEnvironmentSelect("#account-profile", "#account-environment");

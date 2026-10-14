@@ -345,7 +345,30 @@ def create_app(
 
     @app.post("/api/profiles/{profile_id}/check", dependencies=secured)
     async def check_profile(profile_id: str):
-        return await active_router.check_profile(profile_id)
+        accounts = await active_router.accounts()
+        environments = sorted(
+            {
+                item["environment"]
+                for item in accounts
+                if item["profile_id"] == profile_id
+            }
+        )
+        if not environments:
+            return {
+                "profile_id": profile_id,
+                "ok": None,
+                "status": "account_required",
+                "message": "계좌를 등록하면 실전·모의 구분에 맞춰 연결을 확인합니다.",
+            }
+        results = {
+            environment: await active_router.check_profile(profile_id, environment)
+            for environment in environments
+        }
+        return {
+            "profile_id": profile_id,
+            "ok": all(result.get("ok", False) for result in results.values()),
+            "environments": results,
+        }
 
     @app.post("/api/accounts", dependencies=secured)
     async def register_account(body: AccountRegistration):
