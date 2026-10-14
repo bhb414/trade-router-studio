@@ -245,7 +245,12 @@ async def test_profile_validation_returns_clear_message_and_shared_registration(
             json={"id": "나무 실전", "provider": "namuh", "usage": "live"},
         )
         assert invalid_id.status_code == 422
-        assert "프로필 ID" in invalid_id.json()["message"]
+        assert "연결 이름" in invalid_id.json()["message"]
+
+        page = await client.get("/")
+        assert "증권사 API 연결 추가" in page.text
+        assert "증권사를 선택하면 필요한 인증 항목이 자동으로 표시됩니다." in page.text
+        assert "연결 프로필" not in page.text
 
         missing_key = await client.post(
             "/api/profiles",

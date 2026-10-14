@@ -169,22 +169,23 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error(
-        _: Request, exc: RequestValidationError
+        request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         first = exc.errors()[0] if exc.errors() else {}
         location = list(first.get("loc", ()))[1:]
         field = str(location[-1]) if location else ""
         labels = {
-            "id": "프로필 ID",
+            "id": "연결 이름",
             "provider": "증권사",
-            "environment": "접속 환경",
+            "environment": "계좌 구분",
             "app_key": "App Key",
             "app_secret": "App Secret",
             "alias": "계좌 별칭",
             "account_number": "계좌번호",
         }
         if first.get("type") == "string_pattern_mismatch" and field == "id":
-            message = "프로필 ID는 영문 또는 숫자로 시작하고 영문·숫자·점·밑줄·하이픈만 사용할 수 있습니다."
+            subject = "연결 이름" if request.url.path == "/api/profiles" else "전략 ID"
+            message = f"{subject}은(는) 영문 또는 숫자로 시작하고 영문·숫자·점·밑줄·하이픈만 사용할 수 있습니다."
         elif first.get("type") == "value_error":
             message = str(first.get("ctx", {}).get("error") or first.get("msg", ""))
             message = message.removeprefix("Value error, ")

@@ -84,10 +84,10 @@ function render() {
   $("#strategy-count").textContent = "등록 " + snapshot.strategies.length;
 
   const providerNames = { kis: "한국투자증권 KIS", namuh: "NH투자증권 NAMUH", simulated: "시뮬레이션" };
-  const environmentNames = { live: "실전", paper: "모의" };
+  const environmentNames = { live: "실전 계좌", paper: "모의 계좌" };
   const usageNames = { live: "실전용", paper: "모의용", shared: "실전·모의 공용" };
   $("#profiles").innerHTML = table(
-    ["별칭", "증권사", "인증정보 용도", "인증", "작업"],
+    ["연결 이름", "증권사", "키 사용 범위", "인증", "작업"],
     snapshot.profiles.map((item) =>
       "<tr><td><strong>" + esc(item.id) + "</strong></td>" +
       "<td>" + esc(providerNames[item.provider] || item.provider) + "</td><td>" +
@@ -100,7 +100,7 @@ function render() {
   );
 
   $("#accounts").innerHTML = table(
-    ["별칭", "프로필", "환경", "계좌", "주문", "작업"],
+    ["별칭", "증권사 연결", "계좌 구분", "계좌", "주문", "작업"],
     snapshot.accounts.map((item) =>
       "<tr><td><strong>" + esc(item.alias) + "</strong></td>" +
       "<td>" + esc(item.profile_id) + "</td><td>" +
@@ -114,13 +114,12 @@ function render() {
   );
 
   $("#strategies").innerHTML = table(
-    ["전략", "거래 계좌", "시세", "시세 환경", "승인", "프로세스", "작업"],
+    ["전략", "거래 계좌", "시세 연결", "승인", "프로세스", "작업"],
     snapshot.strategies.map((item) => {
       const processState = item.process ? item.process.state : "stopped";
       return "<tr><td><strong>" + esc(item.strategy.id) + "</strong></td>" +
         "<td>" + esc(item.strategy.trading_account) + "</td>" +
         "<td>" + esc(item.strategy.market_data) + "</td>" +
-        "<td>" + esc(environmentNames[item.strategy.market_environment] || item.strategy.market_environment) + "</td>" +
         '<td><span class="badge ' + (item.strategy.armed ? "ready" : "") + '">' +
         (item.strategy.armed ? "허용" : "차단") + "</span></td>" +
         '<td><span class="badge ' + esc(processState) + '">' + esc(processState) + "</span></td>" +
@@ -349,6 +348,7 @@ async function refreshLogs() {
 function updateCredentialFields() {
   const provider = $("#profile-provider").value;
   const simulated = provider === "simulated";
+  const usageSelect = $("#profile-usage");
   const capability = (state.snapshot.capabilities || []).find(
     (item) => item.provider === provider,
   );
@@ -361,23 +361,39 @@ function updateCredentialFields() {
       usages.includes("paper") && usages.includes("live")) {
     usages.push("shared");
   }
-  const current = $("#profile-usage").value;
-  $("#profile-usage").innerHTML = usages.map(
+  const current = usageSelect.value;
+  const providerChanged = usageSelect.dataset.provider !== provider;
+  usageSelect.dataset.provider = provider;
+  usageSelect.innerHTML = usages.map(
     (item) => '<option value="' + item + '">' +
       (item === "shared" ? "실전·모의 공용" : (item === "live" ? "실전용" : "모의용")) + "</option>",
   ).join("");
-  if (usages.includes(current)) $("#profile-usage").value = current;
+  const preferred = provider === "namuh" && usages.includes("shared") ? "shared" : usages[0];
+  usageSelect.value = !providerChanged && usages.includes(current) ? current : preferred;
   $("#credential-fields").classList.toggle("hidden", simulated);
+  $("#usage-field").classList.toggle("hidden", simulated);
   $("#profile-key").required = !simulated;
   $("#profile-secret").required = !simulated;
-  $("#profile-usage").disabled = simulated;
-  if (simulated) $("#profile-usage").value = "paper";
+  usageSelect.disabled = simulated;
+  if (simulated) usageSelect.value = "paper";
   if (provider === "namuh") {
-    $("#usage-help").textContent = "NAMUH PLUG 인증정보는 실전용·모의용·실전과 모의 공용으로 표시할 수 있습니다. 실제 접속 환경은 계좌와 전략에서 정합니다.";
+    $("#credential-title").textContent = "NH PLUG API 인증정보";
+    $("#credential-help").textContent = "NH PLUG 포털에서 발급받은 App Key와 App Secret을 입력하세요.";
+    $("#profile-key-label").textContent = "NH PLUG App Key";
+    $("#profile-secret-label").textContent = "NH PLUG App Secret";
+    $("#profile-key").placeholder = "NH PLUG App Key";
+    $("#profile-secret").placeholder = "NH PLUG App Secret";
+    $("#usage-help").textContent = "한 키를 실전과 모의에 함께 쓰면 공용을 선택하세요. API 주소는 계좌 구분에 맞춰 자동 선택됩니다.";
   } else if (provider === "kis") {
-    $("#usage-help").textContent = "KIS는 실전용과 모의용 App Key·App Secret을 따로 발급하므로 해당 용도를 선택합니다.";
+    $("#credential-title").textContent = "KIS Developers API 인증정보";
+    $("#credential-help").textContent = "KIS Developers에서 발급받은 App Key와 App Secret을 입력하세요.";
+    $("#profile-key-label").textContent = "KIS App Key";
+    $("#profile-secret-label").textContent = "KIS App Secret";
+    $("#profile-key").placeholder = "KIS App Key";
+    $("#profile-secret").placeholder = "KIS App Secret";
+    $("#usage-help").textContent = "실전용 키와 모의용 키가 다르면 증권사 연결을 각각 추가하세요. API 주소는 자동 선택됩니다.";
   } else {
-    $("#usage-help").textContent = "외부 증권사 인증정보가 없는 개발·테스트용입니다.";
+    $("#usage-help").textContent = "";
   }
 }
 
@@ -404,7 +420,7 @@ async function registerProfile(event) {
     const result = await api("/api/profiles", { method: "POST", body: JSON.stringify(body) });
     $("#profile-secret").value = "";
     $("#profile-dialog").close();
-    toast("인증정보 프로필을 등록했습니다.");
+    toast("증권사 API 연결을 추가했습니다.");
     await refresh();
   } catch (error) {
     toast(error.message, true);
@@ -414,7 +430,7 @@ async function registerProfile(event) {
 function showAccountDialog() {
   const profiles = state.snapshot.profiles;
   if (!profiles.length) {
-    toast("연결 프로필을 먼저 등록하세요.", true);
+    toast("증권사 API 연결을 먼저 추가하세요.", true);
     return;
   }
   $("#account-form").reset();
@@ -434,10 +450,25 @@ function updateEnvironmentSelect(profileSelector, environmentSelector) {
   const select = $(environmentSelector);
   const current = select.value;
   select.innerHTML = environments.map(
-    (item) => '<option value="' + item + '">' + (item === "live" ? "실전" : "모의") + "</option>",
+    (item) => '<option value="' + item + '">' + (item === "live" ? "실전 계좌" : "모의 계좌") + "</option>",
   ).join("");
   if (environments.includes(current)) select.value = current;
   select.disabled = environments.length === 1;
+  if (profileSelector === "#account-profile") {
+    $("#account-type-help").textContent = environments.length === 1
+      ? (environments[0] === "live" ? "실전용 키이므로 실전 계좌로 자동 지정됩니다." : "모의용 키이므로 모의 계좌로 자동 지정됩니다.")
+      : "공용 키입니다. 등록할 계좌가 실전 계좌인지 모의 계좌인지 선택하세요.";
+  }
+}
+
+function updateStrategyMarketConnection() {
+  const profile = state.snapshot.profiles.find((item) => item.id === $("#strategy-market").value);
+  const account = state.snapshot.accounts.find((item) => item.alias === $("#strategy-account").value);
+  if (!profile || !account) return;
+  const environment = profile.usage === "shared" ? account.environment : profile.usage;
+  $("#strategy-market-environment").value = environment;
+  const kind = environment === "live" ? "실전" : "모의";
+  $("#strategy-market-help").textContent = kind + " 시세 API를 자동 사용합니다. 서버 주소를 따로 설정할 필요가 없습니다.";
 }
 
 function optionalNumber(selector) {
@@ -480,7 +511,7 @@ async function registerAccount(event) {
 function showStrategyDialog() {
   const snapshot = state.snapshot;
   if (!snapshot.accounts.length || !snapshot.profiles.length) {
-    toast("먼저 연결 프로필과 계좌를 등록하세요.", true);
+    toast("먼저 증권사 API 연결과 계좌를 등록하세요.", true);
     return;
   }
   $("#register-form").reset();
@@ -491,7 +522,7 @@ function showStrategyDialog() {
     (item) => '<option value="' + esc(item.id) + '">' + esc(item.id) +
       " · " + esc(item.provider) + "</option>",
   ).join("");
-  updateEnvironmentSelect("#strategy-market", "#strategy-market-environment");
+  updateStrategyMarketConnection();
   $("#register").showModal();
   $("#strategy-id").focus();
 }
@@ -537,7 +568,8 @@ $("#new-account").onclick = showAccountDialog;
 $("#new-strategy").onclick = showStrategyDialog;
 $("#profile-provider").onchange = updateCredentialFields;
 $("#account-profile").onchange = () => updateEnvironmentSelect("#account-profile", "#account-environment");
-$("#strategy-market").onchange = () => updateEnvironmentSelect("#strategy-market", "#strategy-market-environment");
+$("#strategy-account").onchange = updateStrategyMarketConnection;
+$("#strategy-market").onchange = updateStrategyMarketConnection;
 $("#profile-form").onsubmit = registerProfile;
 $("#account-form").onsubmit = registerAccount;
 $("#register-form").onsubmit = registerStrategy;
