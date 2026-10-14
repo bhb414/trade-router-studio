@@ -15,7 +15,12 @@ from trade_router.core.secrets import DpapiSecretStore
 from .config import StudioPaths
 from .database import StudioStore
 from .errors import StudioError
-from .models import ScriptUpdate, StrategyRegistration
+from .models import (
+    AccountRegistration,
+    ProfileRegistration,
+    ScriptUpdate,
+    StrategyRegistration,
+)
 from .router_api import RouterAdminClient
 from .runner import ScriptSupervisor, validate_source
 from .version import __version__
@@ -189,6 +194,34 @@ def create_app(
         return await active_router.register_strategy(
             body.id, body.trading_account, body.market_data
         )
+
+    @app.post("/api/profiles", dependencies=secured)
+    async def register_profile(body: ProfileRegistration):
+        return await active_router.register_profile(body.model_dump(mode="json"))
+
+    @app.post("/api/profiles/{profile_id}/check", dependencies=secured)
+    async def check_profile(profile_id: str):
+        return await active_router.check_profile(profile_id)
+
+    @app.post("/api/accounts", dependencies=secured)
+    async def register_account(body: AccountRegistration):
+        return await active_router.register_account(body.model_dump(mode="json"))
+
+    @app.post("/api/accounts/{alias}/arm", dependencies=secured)
+    async def arm_account(alias: str):
+        return await active_router.set_account_armed(alias, True)
+
+    @app.post("/api/accounts/{alias}/disarm", dependencies=secured)
+    async def disarm_account(alias: str):
+        return await active_router.set_account_armed(alias, False)
+
+    @app.post("/api/strategies/{strategy_id}/arm", dependencies=secured)
+    async def arm_strategy(strategy_id: str):
+        return await active_router.set_strategy_armed(strategy_id, True)
+
+    @app.post("/api/strategies/{strategy_id}/disarm", dependencies=secured)
+    async def disarm_strategy(strategy_id: str):
+        return await active_router.set_strategy_armed(strategy_id, False)
 
     @app.get("/api/strategies/{strategy_id}/script", dependencies=secured)
     async def get_script(strategy_id: str):

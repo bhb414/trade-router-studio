@@ -18,7 +18,7 @@ class StudioPaths:
     strategy_log_dir: Path
 
     @classmethod
-    def discover(cls) -> "StudioPaths":
+    def discover(cls) -> StudioPaths:
         override = os.environ.get("TRADE_ROUTER_STUDIO_HOME", "").strip()
         home = (
             Path(override).expanduser().resolve()

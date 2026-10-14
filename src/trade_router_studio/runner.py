@@ -237,7 +237,7 @@ class ScriptSupervisor:
                         subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                     ),
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - isolate child startup failures
                 status.state = "failed"
                 status.message = f"프로세스를 시작하지 못했습니다: {type(exc).__name__}"
                 status.stopped_at = self._now()

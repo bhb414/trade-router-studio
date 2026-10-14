@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from trade_router import ProviderEnvironment, RiskLimits
 
 
 class ScriptRecord(BaseModel):
@@ -37,3 +38,24 @@ class StrategyRegistration(BaseModel):
     )
     trading_account: str
     market_data: str
+
+
+class ProfileRegistration(BaseModel):
+    id: str = Field(
+        min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    )
+    provider: Literal["kis", "namuh", "simulated"]
+    environment: ProviderEnvironment = ProviderEnvironment.PAPER
+    display_name: str | None = Field(default=None, max_length=128)
+    app_key: str | None = None
+    app_secret: str | None = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class AccountRegistration(BaseModel):
+    alias: str = Field(
+        min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    )
+    profile_id: str
+    account_number: str = Field(min_length=1, max_length=64)
+    risk: RiskLimits = Field(default_factory=RiskLimits)

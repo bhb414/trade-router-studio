@@ -40,7 +40,7 @@ def _request(method: str, path: str, *, timeout: float = 5) -> Any:
         try:
             body = response.json()
             message = f"{body.get('code', 'ERROR')}: {body.get('message', '')}"
-        except Exception:
+        except ValueError:
             message = f"HTTP {response.status_code}"
         raise typer.BadParameter(message)
     return response.json() if response.content else None
@@ -50,7 +50,7 @@ def _studio_alive() -> bool:
     try:
         _request("GET", "/api/health", timeout=1)
         return True
-    except Exception:
+    except typer.BadParameter:
         return False
 
 
@@ -63,7 +63,7 @@ def _router_alive() -> bool:
             timeout=1,
         )
         return response.status_code == 200
-    except Exception:
+    except Exception:  # noqa: BLE001 - health probing must never abort CLI startup
         return False
 
 
@@ -105,21 +105,21 @@ def start(
 
         main()
         return
-    log = open(paths.server_log, "a", encoding="utf-8")
     flags = (
         subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
         if os.name == "nt"
         else 0
     )
-    process = subprocess.Popen(
-        [sys.executable, "-m", "trade_router_studio.server"],
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=log,
-        creationflags=flags,
-        cwd=str(paths.home),
-        close_fds=True,
-    )
+    with paths.server_log.open("a", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "trade_router_studio.server"],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            creationflags=flags,
+            cwd=str(paths.home),
+            close_fds=True,
+        )
     paths.pid.write_text(str(process.pid), encoding="ascii")
     for _ in range(40):
         if _studio_alive():

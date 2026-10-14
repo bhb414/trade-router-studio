@@ -41,6 +41,19 @@ trade-studio status
 trade-studio stop
 ```
 
+## Web setup
+
+The dashboard can complete the initial setup without using the Router CLI:
+
+1. Use **연결 등록** to add a KIS, NAMUH, or simulated connection and check it.
+2. Use **계좌 등록** to bind an account alias and set central risk limits.
+3. Open **스크립트**, register a strategy, and save its Python source.
+4. Enable the account and strategy separately before starting an order-capable script.
+
+Broker credentials and full account numbers are sent directly to Trade Router and
+stored in its Windows DPAPI vault. Studio only displays public metadata and masked
+account numbers. New accounts and strategies start with order permission disabled.
+
 ## Script contract
 
 ```python

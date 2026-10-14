@@ -48,7 +48,7 @@ class RouterAdminClient:
                 body = response.json()
                 code = body.get("code", "ROUTER_ERROR")
                 message = body.get("message", "Trade Router request failed.")
-            except Exception:
+            except ValueError:
                 code = "ROUTER_HTTP_ERROR"
                 message = f"Trade Router returned HTTP {response.status_code}."
             raise StudioError(code, message, status_code=response.status_code)
@@ -60,14 +60,31 @@ class RouterAdminClient:
     async def profiles(self) -> list[dict[str, Any]]:
         return await self.request("GET", "/v1/profiles")
 
+    async def register_profile(self, body: dict[str, Any]) -> dict[str, Any]:
+        return await self.request("POST", "/v1/profiles", json_body=body)
+
+    async def check_profile(self, profile_id: str) -> dict[str, Any]:
+        return await self.request("POST", f"/v1/profiles/{profile_id}/check")
+
     async def accounts(self) -> list[dict[str, Any]]:
         return await self.request("GET", "/v1/accounts")
+
+    async def register_account(self, body: dict[str, Any]) -> dict[str, Any]:
+        return await self.request("POST", "/v1/accounts", json_body=body)
+
+    async def set_account_armed(self, alias: str, armed: bool) -> dict[str, Any]:
+        action = "arm" if armed else "disarm"
+        return await self.request("POST", f"/v1/accounts/{alias}/{action}")
 
     async def strategies(self) -> list[dict[str, Any]]:
         return await self.request("GET", "/v1/strategies")
 
     async def strategy(self, strategy_id: str) -> dict[str, Any]:
         return await self.request("GET", f"/v1/strategies/{strategy_id}")
+
+    async def set_strategy_armed(self, strategy_id: str, armed: bool) -> dict[str, Any]:
+        action = "arm" if armed else "disarm"
+        return await self.request("POST", f"/v1/strategies/{strategy_id}/{action}")
 
     async def register_strategy(
         self, strategy_id: str, trading_account: str, market_data: str
