@@ -46,6 +46,7 @@ trade-studio stop
 ```
 
 On Windows, double-click `start-studio.vbs` for a windowless one-click launch.
+Double-click `stop-studio.vbs` to stop Studio first and then the central Router.
 `start-studio.cmd` remains available when startup output is needed for troubleshooting.
 
 ## Web setup
