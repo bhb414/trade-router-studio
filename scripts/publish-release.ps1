@@ -18,7 +18,7 @@ try {
   $Pyproject = [System.IO.File]::ReadAllText((Join-Path $ProjectRoot "pyproject.toml"))
   $Pyproject = [regex]::Replace(
     $Pyproject,
-    '(?m)^version = "[^"]+"$',
+    '(?m)^version = "[^"]+"(?=\r?$)',
     "version = `"$Version`"",
     1
   )
