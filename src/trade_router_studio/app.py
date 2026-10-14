@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import os
 import secrets
 import time
 from contextlib import asynccontextmanager, suppress
@@ -57,6 +58,32 @@ async def main(router):
 '''
 
 
+def _process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.OpenProcess(0x00100000, False, pid)
+    if not handle:
+        return False
+    try:
+        return kernel.WaitForSingleObject(handle, 0) == 0x00000102
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def _ui_session_cookie(token: str, *, expires_at: int | None = None) -> str:
     expires = expires_at or int(time.time()) + _UI_SESSION_SECONDS
     payload = f"v1:{expires}"
@@ -96,6 +123,15 @@ def create_app(
     token = studio_token or DpapiSecretStore(active_paths.secrets).installation_token()
     ui_codes: dict[str, float] = {}
 
+    async def monitor_console_host(app: FastAPI, pid: int) -> None:
+        while _process_alive(pid):
+            await asyncio.sleep(1)
+        with suppress(StudioError):
+            await active_router.shutdown()
+        server = getattr(app.state, "server", None)
+        if server is not None:
+            server.should_exit = True
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await active_store.open()
@@ -104,9 +140,20 @@ def create_app(
         app.state.supervisor = supervisor
         app.state.updates = update_service
         await supervisor.restore()
+        parent_task = None
+        try:
+            parent_pid = int(os.environ.get("TRADE_STUDIO_HOST_PID", "0"))
+        except ValueError:
+            parent_pid = 0
+        if parent_pid > 0 and parent_pid != os.getpid():
+            parent_task = asyncio.create_task(monitor_console_host(app, parent_pid))
         try:
             yield
         finally:
+            if parent_task is not None:
+                parent_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await parent_task
             await supervisor.close()
             await active_store.close()
 

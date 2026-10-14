@@ -151,12 +151,16 @@ def start(
             if _packaged()
             else [_background_python(), "-m", "trade_router_studio.server"]
         )
+        child_environment = os.environ.copy()
+        if _packaged():
+            child_environment["TRADE_STUDIO_HOST_PID"] = str(os.getpid())
         process = subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
             creationflags=flags,
+            env=child_environment,
             cwd=str(paths.home),
             close_fds=True,
         )
@@ -203,6 +207,13 @@ def stop_all() -> None:
     """Stop Studio and the central Router for the packaged desktop app."""
     stop()
     _request_router_shutdown()
+    for _ in range(40):
+        if not _router_alive():
+            RouterPaths.discover().pid.unlink(missing_ok=True)
+            console.print("Trade Router를 종료했습니다.")
+            return
+        time.sleep(0.25)
+    console.print("Trade Router가 종료 작업을 정리하고 있습니다.")
 
 
 def request_all_shutdowns() -> None:
