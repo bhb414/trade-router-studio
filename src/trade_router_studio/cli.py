@@ -70,9 +70,11 @@ def _router_alive() -> bool:
 def _ensure_router() -> None:
     if _router_alive():
         return
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     result = subprocess.run(
         [sys.executable, "-m", "trade_router.cli", "daemon", "start"],
         check=False,
+        creationflags=flags,
     )
     if result.returncode != 0 or not _router_alive():
         raise typer.BadParameter("Trade Router 데몬을 시작하지 못했습니다.")

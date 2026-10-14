@@ -45,6 +45,9 @@ trade-studio status
 trade-studio stop
 ```
 
+On Windows, double-click `start-studio.vbs` for a windowless one-click launch.
+`start-studio.cmd` remains available when startup output is needed for troubleshooting.
+
 ## Web setup
 
 The dashboard can complete the initial setup without using the Router CLI:
