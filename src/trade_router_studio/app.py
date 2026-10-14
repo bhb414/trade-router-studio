@@ -156,6 +156,9 @@ def create_app(
                 with suppress(asyncio.CancelledError):
                     await parent_task
             await supervisor.close()
+            close_router = getattr(active_router, "close", None)
+            if close_router is not None:
+                await close_router()
             await active_store.close()
 
     app = FastAPI(title="Trade Router Studio", version=__version__, lifespan=lifespan)
@@ -263,14 +266,11 @@ def create_app(
         except StudioError as exc:
             router_health = {"status": "unavailable", "message": exc.message}
             router_connected = False
-        statuses = await supervisor.statuses()
         return {
             "status": "ready" if router_connected else "degraded",
             "version": __version__,
             "router": router_health,
-            "running_scripts": sum(
-                item.state == "running" for item in statuses.values()
-            ),
+            "running_scripts": supervisor.running_count(),
         }
 
     @app.get("/api/app/update", dependencies=secured)

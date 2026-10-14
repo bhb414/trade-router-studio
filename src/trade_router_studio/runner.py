@@ -190,8 +190,25 @@ class ScriptSupervisor:
 
     async def statuses(self) -> dict[str, ProcessStatus]:
         scripts = await self.store.list_scripts()
-        ids = {item.strategy_id for item in scripts} | set(self._handles)
-        return {strategy_id: await self.status(strategy_id) for strategy_id in ids}
+        records = {item.strategy_id: item for item in scripts}
+        ids = set(records) | set(self._handles)
+        return {
+            strategy_id: (
+                self._handles[strategy_id].status
+                if strategy_id in self._handles
+                else ProcessStatus(
+                    strategy_id=strategy_id,
+                    state="stopped",
+                    desired_running=records[strategy_id].desired_running,
+                )
+            )
+            for strategy_id in ids
+        }
+
+    def running_count(self) -> int:
+        return sum(
+            handle.status.state == "running" for handle in self._handles.values()
+        )
 
     def logs(self, strategy_id: str, max_bytes: int = 65_536) -> str:
         path = self._log_path(strategy_id)

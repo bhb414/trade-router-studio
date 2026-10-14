@@ -9,6 +9,36 @@ _WINDOWS_CONTROL_HANDLER = None
 _WINDOWS_JOB_HANDLE = None
 
 
+def _pid_file_alive(path) -> bool:
+    try:
+        pid = int(path.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.OpenProcess(0x00100000, False, pid)
+    if not handle:
+        return False
+    try:
+        return kernel.WaitForSingleObject(handle, 0) == 0x00000102
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def _install_windows_close_handler() -> None:
     if os.name != "nt":
         return
@@ -138,12 +168,10 @@ def _close_shutdown_job() -> None:
 
 
 def _run_console_host() -> None:
-    from trade_router_studio.cli import (
-        _router_alive,
-        _studio_alive,
-        start,
-        stop_all,
-    )
+    from trade_router.core.config import RouterPaths
+
+    from trade_router_studio.cli import start, stop_all
+    from trade_router_studio.config import StudioPaths
 
     _install_windows_close_handler()
     _create_shutdown_job()
@@ -153,7 +181,9 @@ def _run_console_host() -> None:
     print("Trade Router Studio가 실행 중입니다.")
     print("이 창을 닫거나 Ctrl+C를 누르면 Studio와 Router가 종료됩니다.")
     try:
-        while _studio_alive() or _router_alive():
+        while _pid_file_alive(StudioPaths.discover().pid) or _pid_file_alive(
+            RouterPaths.discover().pid
+        ):
             time.sleep(0.5)
     except KeyboardInterrupt:
         pass

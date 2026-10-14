@@ -4,6 +4,8 @@ const state = {
   selected: null,
   dirty: false,
   update: null,
+  refreshing: false,
+  refreshingLogs: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -61,6 +63,8 @@ function table(headers, rows) {
 }
 
 async function refresh() {
+  if (state.refreshing) return;
+  state.refreshing = true;
   try {
     const results = await Promise.all([api("/api/health"), api("/api/snapshot")]);
     state.health = results[0];
@@ -69,6 +73,8 @@ async function refresh() {
   } catch (error) {
     toast(error.message, true);
     $("#status-text").textContent = "연결 안 됨";
+  } finally {
+    state.refreshing = false;
   }
 }
 
@@ -347,7 +353,8 @@ async function stop() {
 }
 
 async function refreshLogs() {
-  if (!state.selected) return;
+  if (!state.selected || state.refreshingLogs) return;
+  state.refreshingLogs = true;
   try {
     const id = encodeURIComponent(state.selected);
     const results = await Promise.all([
@@ -359,7 +366,10 @@ async function refreshLogs() {
     const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 35;
     element.textContent = results[1].logs || "아직 실행 로그가 없습니다.";
     if (atBottom) element.scrollTop = element.scrollHeight;
-  } catch {}
+  } catch {
+  } finally {
+    state.refreshingLogs = false;
+  }
 }
 
 function updateCredentialFields() {

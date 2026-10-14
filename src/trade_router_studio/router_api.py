@@ -24,6 +24,7 @@ class RouterAdminClient:
     def __init__(self, *, base_url: str | None = None) -> None:
         self.base_url = (base_url or daemon_base_url()).rstrip("/")
         self._token: str | None = None
+        self._client: httpx.AsyncClient | None = None
 
     @property
     def token(self) -> str:
@@ -42,12 +43,16 @@ class RouterAdminClient:
         timeout: float = 15,
     ) -> Any:
         try:
-            async with httpx.AsyncClient(
-                base_url=self.base_url,
-                headers={"authorization": f"Bearer {self.token}"},
-                timeout=timeout,
-            ) as client:
-                response = await client.request(method, path, json=json_body)
+            if self._client is None:
+                self._client = httpx.AsyncClient(
+                    base_url=self.base_url,
+                    headers={"authorization": f"Bearer {self.token}"},
+                    timeout=15,
+                    trust_env=False,
+                )
+            response = await self._client.request(
+                method, path, json=json_body, timeout=timeout
+            )
         except httpx.RequestError as exc:
             raise StudioError(
                 "ROUTER_UNAVAILABLE",
@@ -68,6 +73,11 @@ class RouterAdminClient:
                 message = f"Trade Router returned HTTP {response.status_code}."
             raise StudioError(code, message, status_code=response.status_code)
         return None if response.status_code == 204 else response.json()
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     async def health(self) -> dict[str, Any]:
         return await self.request("GET", "/v1/system/health", timeout=3)
