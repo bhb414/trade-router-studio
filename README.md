@@ -32,6 +32,10 @@ and opens a one-time authenticated browser URL. The default addresses are:
 - Trade Router daemon: `http://127.0.0.1:8877`
 - Trade Router Studio: `http://127.0.0.1:8890`
 
+The authenticated browser session remains valid for 30 days and survives Studio
+restarts. Run `trade-studio open` again after that period or after rotating the local
+installation token.
+
 Commands:
 
 ```text

@@ -133,3 +133,42 @@ async def test_web_auth_and_script_save(tmp_path):
         )
         assert saved.status_code == 200
         assert saved.json()["validation"]["valid"] is True
+
+
+async def test_web_cookie_survives_studio_restart(tmp_path):
+    active_paths = paths(tmp_path)
+    active_paths.ensure()
+    first = create_app(
+        paths=active_paths,
+        store=StudioStore(active_paths.database),
+        router=StubRouter(),
+        studio_token="persistent-studio-token",
+    )
+    async with (
+        first.router.lifespan_context(first),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=first), base_url="http://studio.test"
+        ) as client,
+    ):
+        session = await client.post(
+            "/api/ui-session",
+            headers={"authorization": "Bearer persistent-studio-token"},
+        )
+        auth = await client.get(session.json()["path"], follow_redirects=False)
+        cookie = auth.cookies["trade_studio_ui"]
+
+    restarted = create_app(
+        paths=active_paths,
+        store=StudioStore(active_paths.database),
+        router=StubRouter(),
+        studio_token="persistent-studio-token",
+    )
+    async with (
+        restarted.router.lifespan_context(restarted),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=restarted),
+            base_url="http://studio.test",
+            cookies={"trade_studio_ui": cookie},
+        ) as client,
+    ):
+        assert (await client.get("/api/health")).status_code == 200

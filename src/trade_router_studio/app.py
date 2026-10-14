@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -26,6 +29,7 @@ from .runner import ScriptSupervisor, validate_source
 from .version import __version__
 
 _WEB_DIR = Path(__file__).resolve().parent / "web"
+_UI_SESSION_SECONDS = 30 * 24 * 60 * 60
 _TEMPLATE = '''"""Trade Router Studio strategy.
 
 The strategy runs in its own process. Quotes, account data, and orders are always
@@ -52,6 +56,28 @@ async def main(router):
 '''
 
 
+def _ui_session_cookie(token: str, *, expires_at: int | None = None) -> str:
+    expires = expires_at or int(time.time()) + _UI_SESSION_SECONDS
+    payload = f"v1:{expires}"
+    signature = hmac.new(
+        token.encode("utf-8"), payload.encode("ascii"), hashlib.sha256
+    ).digest()
+    encoded = base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
+    return f"v1.{expires}.{encoded}"
+
+
+def _valid_ui_session(cookie: str, token: str) -> bool:
+    try:
+        version, raw_expires, supplied_signature = cookie.split(".", 2)
+        expires = int(raw_expires)
+    except (TypeError, ValueError):
+        return False
+    if version != "v1" or expires <= int(time.time()):
+        return False
+    expected = _ui_session_cookie(token, expires_at=expires).rsplit(".", 1)[1]
+    return secrets.compare_digest(supplied_signature, expected)
+
+
 def create_app(
     *,
     paths: StudioPaths | None = None,
@@ -66,7 +92,6 @@ def create_app(
     supervisor = ScriptSupervisor(active_paths, active_store, active_router)
     token = studio_token or DpapiSecretStore(active_paths.secrets).installation_token()
     ui_codes: dict[str, float] = {}
-    ui_sessions: dict[str, float] = {}
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -107,7 +132,7 @@ def create_app(
             authorization.removeprefix("Bearer ").strip() if authorization else ""
         )
         session = request.cookies.get("trade_studio_ui", "")
-        session_ok = bool(session and ui_sessions.get(session, 0) > time.monotonic())
+        session_ok = bool(session and _valid_ui_session(session, token))
         token_ok = bool(supplied and secrets.compare_digest(supplied, token))
         if not session_ok and not token_ok:
             raise StudioError(
@@ -136,13 +161,12 @@ def create_app(
             return JSONResponse(
                 status_code=401, content={"message": "웹 실행 주소가 만료되었습니다."}
             )
-        session = secrets.token_urlsafe(32)
-        ui_sessions[session] = time.monotonic() + 43_200
+        session = _ui_session_cookie(token)
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
             "trade_studio_ui",
             session,
-            max_age=43_200,
+            max_age=_UI_SESSION_SECONDS,
             httponly=True,
             samesite="strict",
             path="/",
